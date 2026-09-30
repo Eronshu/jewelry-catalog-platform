@@ -8,6 +8,7 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
+import { SiteShell } from "./components/storefront/site-shell";
 import "./app.css";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -29,7 +30,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  return (
+    <SiteShell>
+      <Outlet />
+    </SiteShell>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
@@ -44,9 +49,12 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
       : "Please try again later.";
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-16">
-      <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-      <p className="mt-3 text-neutral-600">{message}</p>
-    </main>
+    <SiteShell>
+      <div className="container error-content">
+        <p className="eyebrow">Storefront</p>
+        <h1 className="page-title">{title}</h1>
+        <p className="lead">{message}</p>
+      </div>
+    </SiteShell>
   );
 }

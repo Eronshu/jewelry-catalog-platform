@@ -6,4 +6,5 @@ coverage
 node_modules
 package-lock.json
 PROJECT_SPEC.md
+docs/DESIGN_BRIEF.md
 worker-configuration.d.ts
