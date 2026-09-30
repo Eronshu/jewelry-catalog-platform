@@ -4,7 +4,7 @@ import { reviewImages } from "./design-review-images";
  * Temporary visual-density fixture for Issue #2 design review only.
  * These photographs are not the owner's product images, the labels are style
  * descriptors rather than inventory records, and prices are intentionally unset.
- * Delete this module when the real catalog read path is implemented.
+ * Retained for Home's design preview while Shop uses the real catalog.
  */
 function unsplashPhoto(photoId: string, alt: string, source: string) {
   const imageUrl = (width: number) =>
