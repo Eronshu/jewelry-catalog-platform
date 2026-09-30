@@ -4,9 +4,9 @@ A Cloudflare-native React Router application for a small-business jewelry
 catalog and its future owner-facing administration tools. The V1 product scope
 and architecture are defined in [PROJECT_SPEC.md](./PROJECT_SPEC.md).
 
-The catalog schema and server-only read layer are present, but the Home and Shop
-routes still use a labeled visual design fixture. Image storage, authentication,
-admin features, and deployment are not configured yet.
+The Shop route reads public products from its D1 binding. Home still uses a
+labeled visual design fixture. Image storage, authentication, admin features,
+and deployment are not configured yet.
 
 ## Requirements
 
@@ -22,6 +22,7 @@ in `package.json`.
 ```sh
 npm ci
 npm run db:migrate:local
+npm run db:seed:local
 npm run dev
 ```
 
@@ -43,11 +44,13 @@ Wrangler stores local D1 state under the ignored `.wrangler/state` directory.
 The command above explicitly uses `--local` and does not create or modify a
 remote D1 database. Four initial categories are migration data. To add 24
 completely fictional products for local development only, run
-`npm run db:seed:local`. Public seed products have image metadata with
-`dev/products/...` placeholder keys; no R2 objects or deliverable photos exist
-yet. The seed must never be treated as production inventory or applied to a
-remote database. The current design-review fixture is separate and is never
-imported into D1.
+`npm run db:seed:local`. The Shop shows 22 public seed products (20 Available,
+2 Sold); Draft and Hidden records stay private. Public seed products have image
+metadata with `dev/products/...` placeholder keys; no R2 objects or
+deliverable photos exist yet, so Shop cards show square photo placeholders.
+The seed must never be treated as production inventory or applied to a remote
+database. Home's design-review fixture is separate and is never imported into
+D1 or used by Shop.
 
 To rebuild only this catalog D1 database from migrations, stop the dev server
 and run `npm run db:reset:local`. The script drops the catalog tables and their
