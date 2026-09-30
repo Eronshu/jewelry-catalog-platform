@@ -142,3 +142,16 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 .DS_Store
+
+# React Router
+.react-router/
+
+# Build output
+build/
+
+# Cloudflare local state and secrets
+.wrangler/
+.mf/
+.dev.vars
+.dev.vars.*
+worker-configuration.d.ts
