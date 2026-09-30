@@ -8,6 +8,9 @@
   "scripts": {
     "build": "react-router build",
     "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:reset:local": "node scripts/reset-local-catalog.mjs",
+    "db:seed:local": "wrangler d1 execute DB --local --file=seeds/development.sql",
     "dev": "react-router dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
