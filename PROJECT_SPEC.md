@@ -442,8 +442,7 @@ These are defaults, not hard-coded permanent limits.
 - `product_id`
 - `r2_key`
 - `alt_text`
-- `sort_order`
-- `is_cover`
+- `sort_order` — unique per product; the first image in ascending order is the cover
 - `width` nullable
 - `height` nullable
 - `created_at`
@@ -1012,7 +1011,7 @@ Indexes should support frequent filters and sorting.
 - `price_cents >= 0`
 - valid status enum
 - category reference must be valid
-- exactly one cover image when images exist
+- the first image by ascending, unique per-product `sort_order` is the cover; no separate `is_cover` field is required
 - product image order must be deterministic
 - published product must have at least one image
 - published product should have meaningful name and price

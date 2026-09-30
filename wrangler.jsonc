@@ -3,4 +3,12 @@
   "name": "jewelry-catalog-platform",
   "compatibility_date": "2026-09-29",
   "main": "./workers/app.ts",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jewelry-catalog-local",
+      "migrations_dir": "migrations",
+      "migrations_table": "catalog_migrations",
+    },
+  ],
 }
