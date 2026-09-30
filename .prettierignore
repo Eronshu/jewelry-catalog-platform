@@ -1,0 +1,9 @@
+.react-router
+.wrangler
+AGENTS.md
+build
+coverage
+node_modules
+package-lock.json
+PROJECT_SPEC.md
+worker-configuration.d.ts
