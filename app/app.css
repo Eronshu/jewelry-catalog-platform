@@ -138,6 +138,74 @@ a {
 .site-main {
   flex: 1;
 }
+
+.admin-shell {
+  min-height: 100svh;
+  background: #f5f4f1;
+  color: #171717;
+}
+.admin-header {
+  border-bottom: 1px solid #d8d5cf;
+  background: #fff;
+}
+.admin-header-inner {
+  display: flex;
+  width: min(100% - 2.5rem, 68rem);
+  min-height: 4.5rem;
+  margin-inline: auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.admin-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.admin-back-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.25rem;
+  color: #681c29;
+  font-weight: 600;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+.admin-back-link:hover {
+  text-decoration: underline;
+}
+.admin-main {
+  width: min(100% - 2.5rem, 68rem);
+  margin-inline: auto;
+  padding-block: clamp(2rem, 7vw, 5rem);
+}
+.admin-panel {
+  max-width: 40rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border: 1px solid #d8d5cf;
+  background: #fff;
+}
+.admin-kicker {
+  margin: 0 0 1rem;
+  color: #681c29;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.admin-panel h1 {
+  margin: 0 0 1.25rem;
+  font-size: clamp(1.8rem, 5vw, 2.75rem);
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+.admin-panel p:last-child {
+  max-width: 33rem;
+  margin: 0;
+  color: #454340;
+  line-height: 1.6;
+}
 .site-header {
   position: relative;
   z-index: 5;

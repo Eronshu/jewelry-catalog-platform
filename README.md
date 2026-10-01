@@ -7,7 +7,8 @@ and architecture are defined in [PROJECT_SPEC.md](./PROJECT_SPEC.md).
 The Shop route reads public products from its D1 binding. Home still uses a
 labeled visual design fixture. Private local R2 image delivery is configured,
 but Shop cards deliberately retain placeholders until real catalog imagery is
-integrated. Authentication, admin features, and deployment are not configured yet.
+integrated. A protected admin foundation is present, but real Cloudflare Access
+configuration and deployment are not configured yet.
 
 ## Requirements
 
@@ -111,27 +112,79 @@ R2 objects. It is not production inventory. A real private production bucket,
 binding configuration, and image uploads are separate deployment work.
 
 Never commit `.env`, `.dev.vars`, Cloudflare tokens, account identifiers, or
-production data. Browser-visible values must be treated as public. Future
-server-only secrets should be stored locally in `.dev.vars` and in Cloudflare's
-secret management for deployed environments.
+production data. Browser-visible values must be treated as public. Server-only
+admin settings belong in `.dev.vars` locally and Cloudflare secret management
+for deployed environments.
+
+## Admin access foundation
+
+`/admin` has a small owner-facing shell. Every `/admin`, `/admin.data`, and
+`/admin/*` request must pass the Worker guard before React Router runs. Future admin loaders,
+actions, and resource routes must also call `requireAdmin` from
+`app/lib/auth/admin-access.server.ts`. Admin responses, including denials, are
+`private, no-store`; public image delivery retains its existing cache behavior.
+
+The Worker validates the Cloudflare Access application JWT in
+`Cf-Access-Jwt-Assertion` using the team's JWKS, RS256, exact issuer and
+audience, and required time claims. It accepts only a verified human JWT with
+nonempty `email` and `sub` that match the same configured administrator pair.
+Service-token-shaped claims are rejected. A header, cookie, or decoded claim
+alone does not grant access. The Cloudflare Vite build includes Static Assets,
+whose internal router does not pass `ctx.access` to the application Worker.
+
+These server-only settings are required before `/admin` can be used:
+
+- `ADMIN_ACCESS_ISSUER`: exact HTTPS team URL, such as
+  `https://your-team.cloudflareaccess.com`, without a trailing slash.
+- `ADMIN_ACCESS_AUD`: audience tag for the admin Access application.
+- `ADMIN_IDENTITY_PAIRS`: JSON array of approved `{ "email", "sub" }` pairs.
+  Obtain each human `sub` through an authenticated Access identity flow during
+  later policy setup. The `sub` can change if a person is removed and re-added
+  to the Zero Trust organization; review and update the approved pair then.
+
+Missing or invalid settings make `/admin` unavailable. Ordinary `npm run dev`
+does not bypass verification. Tests use fictional identities and synthetic
+signing keys. To inspect only the presentational shell in a local browser, run
+`npm run admin:shell:preview` and open the printed loopback URL. This separate
+Vite fixture lives under `tests/`, outside the application routes and Worker
+build; it does not test authentication or grant access to `/admin`. Opening the
+fixture's source `index.html` directly in a file preview does not run its
+TypeScript/React entry point; use the Vite URL instead.
+
+Before real owner use, configure a Cloudflare Access application limited to
+specifically approved identities, with strong account security. Inventory all
+reachable Worker hostnames and paths, including preview URLs, `workers.dev` if
+enabled, and custom domains. Protect exact `/admin`, its React Router data
+request `/admin.data`, and nested `/admin/*` on each reachable hostname, or
+disable that hostname. Review more-specific
+Access policy precedence. On a protected preview deployment, verify that the
+real Access assertion reaches the application Worker through the deployed
+Static Assets topology; an approved human can open `/admin`, request
+`/admin.data`, and open a nested admin URL; unapproved and unauthenticated
+visitors cannot; and alternate hostnames
+cannot bypass either Access or the application guard. Verify admin no-store
+headers and unchanged public Home, Shop, and image behavior. Local tests do not
+replace this deployment gate. No real Access policy or remote resource is set
+up by this issue.
 
 ## Commands
 
-| Command                    | Purpose                                                    |
-| -------------------------- | ---------------------------------------------------------- |
-| `npm run dev`              | Start the local Cloudflare-compatible development server   |
-| `npm run build`            | Create the production client and Worker bundles            |
-| `npm run db:migrate:local` | Apply pending migrations to local D1 only                  |
-| `npm run db:reset:local`   | Rebuild only the local catalog D1 schema                   |
-| `npm run db:seed:local`    | Add fictional local catalog data                           |
-| `npm run preview`          | Preview the production build locally for manual validation |
-| `npm run format`           | Format project files                                       |
-| `npm run format:check`     | Check formatting without changing files                    |
-| `npm run lint`             | Run ESLint                                                 |
-| `npm run typecheck`        | Generate platform/route types and run TypeScript checks    |
-| `npm test`                 | Run the test suite once                                    |
-| `npm run test:watch`       | Run tests in watch mode                                    |
-| `npm run validate`         | Run all non-interactive validation checks and the build    |
+| Command                       | Purpose                                                    |
+| ----------------------------- | ---------------------------------------------------------- |
+| `npm run dev`                 | Start the local Cloudflare-compatible development server   |
+| `npm run admin:shell:preview` | Preview only the presentational admin shell on loopback    |
+| `npm run build`               | Create the production client and Worker bundles            |
+| `npm run db:migrate:local`    | Apply pending migrations to local D1 only                  |
+| `npm run db:reset:local`      | Rebuild only the local catalog D1 schema                   |
+| `npm run db:seed:local`       | Add fictional local catalog data                           |
+| `npm run preview`             | Preview the production build locally for manual validation |
+| `npm run format`              | Format project files                                       |
+| `npm run format:check`        | Check formatting without changing files                    |
+| `npm run lint`                | Run ESLint                                                 |
+| `npm run typecheck`           | Generate platform/route types and run TypeScript checks    |
+| `npm test`                    | Run the test suite once                                    |
+| `npm run test:watch`          | Run tests in watch mode                                    |
+| `npm run validate`            | Run all non-interactive validation checks and the build    |
 
 ## Project structure
 
