@@ -1,11 +1,17 @@
 import { createRequestHandler } from "react-router";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { getPlatformProxy } from "wrangler";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 
 import handleDocument from "../entry.server";
 import * as Root from "../root";
 import * as Home from "./home";
 import * as Admin from "./admin";
+import * as AdminProductNew from "./admin-product-new";
 import { handleWorkerRequest } from "../../workers/app";
 
 const issuer = "https://integration-team.cloudflareaccess.com";
@@ -37,6 +43,13 @@ const routeEntries = {
         module: Admin,
         children: [],
       },
+      {
+        id: "routes/admin-product-new",
+        parentId: "root",
+        path: "admin/products/new",
+        module: AdminProductNew,
+        children: [],
+      },
     ],
   },
   "routes/home": {
@@ -51,12 +64,23 @@ const routeEntries = {
     path: "admin",
     module: Admin,
   },
+  "routes/admin-product-new": {
+    id: "routes/admin-product-new",
+    parentId: "root",
+    path: "admin/products/new",
+    module: AdminProductNew,
+  },
 };
 
-const assetRoute = (id: string, module: string, hasLoader = false) => ({
+const assetRoute = (
+  id: string,
+  module: string,
+  hasLoader = false,
+  hasAction = false,
+) => ({
   id,
   module,
-  hasAction: false,
+  hasAction,
   hasLoader,
   hasClientAction: false,
   hasClientLoader: false,
@@ -84,6 +108,16 @@ const build = {
         ...assetRoute("routes/admin", "/admin.js", true),
         parentId: "root",
         path: "admin",
+      },
+      "routes/admin-product-new": {
+        ...assetRoute(
+          "routes/admin-product-new",
+          "/admin-product-new.js",
+          true,
+          true,
+        ),
+        parentId: "root",
+        path: "admin/products/new",
       },
     },
     url: "/manifest.js",
@@ -200,7 +234,14 @@ describe("Worker to React Router admin boundary", () => {
   });
 
   it("guards nested and alternate spellings of the admin namespace", async () => {
-    for (const path of ["/admin/next", "/Admin", "/%61dmin"]) {
+    for (const path of [
+      "/admin/next",
+      "/admin/products",
+      "/admin/products.data",
+      "/admin/products/new.data",
+      "/Admin",
+      "/%61dmin",
+    ]) {
       const response = await request(path);
       expect(response.status).toBe(401);
       expect(response.headers.get("Cache-Control")).toBe("private, no-store");
@@ -208,6 +249,119 @@ describe("Worker to React Router admin boundary", () => {
     const nested = await request("/admin/next", await token());
     expect(nested.status).toBe(404);
     expect(nested.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("creates one Draft through the Worker and real product action only for an approved human", async () => {
+    const root = resolve(process.cwd());
+    const localDir = mkdtempSync(
+      join(tmpdir(), "jewelry-admin-boundary-test-"),
+    );
+    let platform: Awaited<ReturnType<typeof getPlatformProxy<Env>>> | undefined;
+    try {
+      execFileSync(
+        join(root, "node_modules", ".bin", "wrangler"),
+        [
+          "d1",
+          "migrations",
+          "apply",
+          "DB",
+          "--local",
+          "--persist-to",
+          localDir,
+        ],
+        {
+          cwd: root,
+          env: {
+            ...process.env,
+            CI: "1",
+            WRANGLER_LOG_PATH: join(localDir, "wrangler.log"),
+          },
+          stdio: "pipe",
+        },
+      );
+      platform = await getPlatformProxy<Env>({
+        configPath: join(root, "wrangler.jsonc"),
+        envFiles: [],
+        persist: { path: join(localDir, "v3") },
+        remoteBindings: false,
+      });
+      const productEnv = { ...platform.env, ...env } as Env;
+      const requestKey = crypto.randomUUID();
+      const body = new URLSearchParams({
+        intent: "create",
+        name: "Fictional Boundary Ring",
+        price: "31.50",
+        categoryId: "4",
+        material: "",
+        colour: "",
+        description: "",
+        sku: "",
+        quantity: "",
+        facebookUrl: "",
+        requestKey,
+      }).toString();
+      const post = (path: string, assertion?: string) =>
+        handleWorkerRequest(
+          new Request(`https://example.invalid${path}`, {
+            method: "POST",
+            headers: {
+              Origin: "https://example.invalid",
+              "Content-Type": "application/x-www-form-urlencoded",
+              ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+            },
+            body,
+          }),
+          productEnv,
+          {} as ExecutionContext,
+          routeHandler,
+        );
+      const count = async () =>
+        (await platform!.env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM products",
+        ).first<{ n: number }>())!.n;
+      for (const [assertion, status] of [
+        [undefined, 401],
+        [await token({ sub: "unapproved-id" }), 403],
+      ] as const) {
+        const denied = await post("/admin/products/new.data", assertion);
+        expect(denied.status).toBe(status);
+        expect(denied.headers.get("Cache-Control")).toBe("private, no-store");
+        expect(await count()).toBe(0);
+      }
+      const approved = await post("/admin/products/new.data", await token());
+      expect(approved.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(approved.status).toBe(202);
+      expect(approved.headers.get("X-Remix-Response")).toBe("yes");
+      const row = await platform.env.DB.prepare(
+        "SELECT id, name, status, price_cents FROM products",
+      ).first<{
+        id: number;
+        name: string;
+        status: string;
+        price_cents: number;
+      }>();
+      expect(row).toMatchObject({
+        name: "Fictional Boundary Ring",
+        status: "draft",
+        price_cents: 3150,
+      });
+      expect(await approved.text()).toContain(
+        `/admin/products/${row!.id}/edit`,
+      );
+      expect(await count()).toBe(1);
+      const documentReplay = await post("/admin/products/new", await token());
+      expect(documentReplay.status).toBe(302);
+      expect(documentReplay.headers.get("Location")).toBe(
+        `/admin/products/${row!.id}/edit`,
+      );
+      expect(documentReplay.headers.get("Cache-Control")).toBe(
+        "private, no-store",
+      );
+      expect(await count()).toBe(1);
+    } finally {
+      await platform?.dispose();
+      rmSync(localDir, { recursive: true, force: true });
+    }
   });
 
   it("keeps unexpected admin route errors generic and uncacheable", async () => {

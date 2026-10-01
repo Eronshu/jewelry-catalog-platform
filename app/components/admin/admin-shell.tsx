@@ -1,11 +1,18 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 
 export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
         <div className="admin-header-inner">
-          <span className="admin-label">Catalog admin</span>
+          <Link className="admin-label" to="/admin">
+            Catalog admin
+          </Link>
+          <nav aria-label="Admin navigation" className="admin-nav">
+            <Link to="/admin/products">Products</Link>
+            <Link to="/admin/products/new">Add product</Link>
+          </nav>
           <a className="admin-back-link" href="/">
             View website <span aria-hidden="true">↗</span>
           </a>
@@ -24,9 +31,9 @@ export function AdminWelcome() {
       <section aria-labelledby="admin-title" className="admin-panel">
         <p className="admin-kicker">Administration</p>
         <h1 id="admin-title">Your catalog workspace</h1>
+        <p>Manage your jewelry catalog in one place.</p>
         <p>
-          Product management is coming soon. This area is ready for the tools
-          you’ll use to manage your jewelry catalog.
+          <Link to="/admin/products">View products</Link>
         </p>
       </section>
     </AdminShell>
