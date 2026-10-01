@@ -3,6 +3,14 @@
   "name": "jewelry-catalog-platform",
   "compatibility_date": "2026-09-29",
   "main": "./workers/app.ts",
+  "cache": { "enabled": true },
+  "images": { "binding": "IMAGES" },
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "jewelry-catalog-images-local",
+    },
+  ],
   "d1_databases": [
     {
       "binding": "DB",

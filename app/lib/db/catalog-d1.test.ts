@@ -7,7 +7,11 @@ import { getPlatformProxy, type PlatformProxy } from "wrangler";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { listActiveCategories } from "./categories.server";
-import { getPublicProductBySlug, listPublicProducts } from "./products.server";
+import {
+  getPublicImageSource,
+  getPublicProductBySlug,
+  listPublicProducts,
+} from "./products.server";
 
 const root = resolve(process.cwd());
 const wrangler = join(root, "node_modules", ".bin", "wrangler");
@@ -581,6 +585,42 @@ describe("the public image invariant", () => {
 });
 
 describe("public catalog reads", () => {
+  it("authorizes an image only for its public parent product", async () => {
+    const available = await insertProduct("visible-image", "available", 1000);
+    const hidden = await insertProduct("hidden-image", "hidden", 1001);
+    await db
+      .prepare(
+        `INSERT INTO product_images (product_id, r2_key, sort_order, created_at)
+         VALUES (?, 'tests/hidden-image/01.jpg', 0, 1001)`,
+      )
+      .bind(hidden!.id)
+      .run();
+    const image = await db
+      .prepare("SELECT id FROM product_images WHERE product_id = ?")
+      .bind(available!.id)
+      .first<{ id: number }>();
+    const hiddenImage = await db
+      .prepare("SELECT id FROM product_images WHERE product_id = ?")
+      .bind(hidden!.id)
+      .first<{ id: number }>();
+    expect(await getPublicImageSource(db, available!.id, image!.id)).toEqual({
+      r2Key: "tests/visible-image/01.jpg",
+    });
+    expect(
+      await getPublicImageSource(db, hidden!.id, hiddenImage!.id),
+    ).toBeNull();
+    expect(
+      await getPublicImageSource(db, available!.id, hiddenImage!.id),
+    ).toBeNull();
+
+    await db
+      .prepare("UPDATE products SET status = 'archived' WHERE id = ?")
+      .bind(available!.id)
+      .run();
+    // This proves the D1 check on a Worker execution. A prior Workers Cache
+    // hit can bypass this query until its cache entry expires.
+    expect(await getPublicImageSource(db, available!.id, image!.id)).toBeNull();
+  });
   it("excludes draft, hidden, and archived records in list and slug reads", async () => {
     for (const [index, status] of [
       "draft",

@@ -22,6 +22,27 @@ export interface ListPublicProductsOptions {
   availability?: "available" | "sold";
 }
 
+export interface PublicImageSource {
+  r2Key: string;
+}
+
+export async function getPublicImageSource(
+  db: D1Database,
+  productId: number,
+  imageId: number,
+): Promise<PublicImageSource | null> {
+  const row = await db
+    .prepare(
+      `SELECT i.r2_key AS r2Key
+       FROM product_images i
+       JOIN products p ON p.id = i.product_id
+       WHERE p.id = ? AND i.id = ? AND p.status IN ('available', 'sold')`,
+    )
+    .bind(productId, imageId)
+    .first<PublicImageSource>();
+  return row;
+}
+
 export async function listPublicProducts(
   db: D1Database,
   options: ListPublicProductsOptions = {},
