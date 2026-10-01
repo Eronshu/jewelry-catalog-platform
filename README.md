@@ -167,6 +167,47 @@ headers and unchanged public Home, Shop, and image behavior. Local tests do not
 replace this deployment gate. No real Access policy or remote resource is set
 up by this issue.
 
+## Admin product management
+
+The protected admin has a product list at `/admin/products`, an Add Product
+form, and edit forms. New and duplicated products are always Draft. Saving or
+changing status from an edit form validates and saves every displayed field in
+one version-checked update. List quick actions submit only the displayed
+product version. A stale action asks the owner to refresh rather than
+overwriting another tab's edit. Archived products are read-only until restored
+to Draft. There is no permanent deletion or photo management in this issue.
+
+The `0002` migration stores a unique request key and payload hash on created
+products. Retrying the same create or duplicate request returns the original
+product, even after later edits. New publication from Draft or Hidden requires
+a valid image row and an existing private R2 object with a matching content
+type and supported size. Public-to-public status changes do not repeat the R2
+check. This check cannot make R2 and D1 atomic; an object may disappear after
+the check. Image transformation is verified separately, not during each owner
+action. The public image route and its existing cache behavior are unchanged.
+
+For local list, search, filter, and form presentation, apply local migrations
+and the 24-row fictional seed as described above. Its image rows are metadata
+placeholders, so they cannot prove a thumbnail or publication. The standalone
+`npm run admin:shell:preview` fixture now provides Welcome, List, Form, and
+Form errors scenes at `/`, `/list`, `/form`, and `/error`. It is presentation
+only; submitting it does not exercise product actions or authentication.
+
+Run `npm test` for isolated functional QA. Admin D1/R2 tests create their own
+temporary local persistence directory, apply migrations there, create an
+Archived fixture and a Draft with a synthetic PNG original, test publication
+and transformation, then dispose of the bindings and remove that directory.
+They do not change the ordinary `.wrangler/state` database or bucket. If a
+test process is interrupted, remove only its `jewelry-admin-d1-test-*`
+directory under the system temporary directory after confirming that process
+has stopped. The normal local seed remains untouched by these tests.
+
+Before owner use, review a protected preview deployment with real Cloudflare
+Access. Check approved and denied users on document and `.data` URLs, all
+reachable hostnames, no-store headers, save and lifecycle actions, a real
+deliverable image, and desktop plus iPhone Safari layout. Synthetic tests and
+the standalone visual fixture do not replace that gate.
+
 ## Commands
 
 | Command                       | Purpose                                                    |
