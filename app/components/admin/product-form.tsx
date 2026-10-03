@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -35,34 +35,18 @@ const emptyFields: ProductFields = {
   facebookUrl: "",
 };
 
-export function ProductForm({
-  categories,
-  initial,
-  feedback,
-  version,
-  status,
-  requestKey,
-  photoCount = 0,
+function StandaloneNavigationGuard({
+  shouldWarn,
+  pending,
+  submitting,
 }: {
-  categories: Category[];
-  initial?: ProductFields;
-  feedback?: FormFeedback;
-  version?: number;
-  status?: ProductStatus;
-  requestKey?: string;
-  photoCount?: number;
+  shouldWarn: boolean;
+  pending: boolean;
+  submitting: React.RefObject<boolean>;
 }) {
-  const [dirty, setDirty] = useState(false);
-  const submittingThisForm = useRef(false);
-  const navigation = useNavigation();
-  const pending = navigation.state === "submitting";
-  const shouldWarn = dirty || Boolean(feedback?.error);
   const blocker = useBlocker(
-    () => shouldWarn && !pending && !submittingThisForm.current,
+    () => shouldWarn && !pending && !submitting.current,
   );
-  useEffect(() => {
-    if (feedback?.error) submittingThisForm.current = false;
-  }, [feedback]);
   useEffect(() => {
     if (blocker.state === "blocked") {
       if (window.confirm("Leave without saving your changes?"))
@@ -71,13 +55,62 @@ export function ProductForm({
     }
   }, [blocker]);
   useBeforeUnload((event) => {
-    if (shouldWarn && !pending && !submittingThisForm.current) {
+    if (shouldWarn && !pending && !submitting.current) {
       event.preventDefault();
       event.returnValue = "";
     }
   });
-  const values = feedback?.fields ?? initial ?? emptyFields;
+  return null;
+}
+
+export function ProductForm({
+  categories,
+  initial,
+  feedback,
+  version,
+  status,
+  requestKey,
+  photoCount = 0,
+  onDirtyChange,
+  onSubmittingChange,
+  confirmBeforeSubmit,
+  onCreateSubmit,
+  locked = false,
+  saveBusy = false,
+  photoEditor,
+}: {
+  categories: Category[];
+  initial?: ProductFields;
+  feedback?: FormFeedback;
+  version?: number;
+  status?: ProductStatus;
+  requestKey?: string;
+  photoCount?: number;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSubmittingChange?: (submitting: boolean) => void;
+  confirmBeforeSubmit?: () => boolean;
+  onCreateSubmit?: (form: HTMLFormElement) => void;
+  locked?: boolean;
+  saveBusy?: boolean;
+  photoEditor?: ReactNode;
+}) {
+  const [values, setValues] = useState<ProductFields>(
+    feedback?.fields ?? initial ?? emptyFields,
+  );
+  const [dirty, setDirty] = useState(false);
+  const submittingThisForm = useRef(false);
+  const navigation = useNavigation();
+  const pending = navigation.state === "submitting";
+  const shouldWarn = dirty || Boolean(feedback?.error);
+  useEffect(() => {
+    if (feedback?.error) {
+      submittingThisForm.current = false;
+      onSubmittingChange?.(false);
+    }
+  }, [feedback, onSubmittingChange]);
   const errors = feedback?.fieldErrors ?? {};
+  const setField = (key: keyof ProductFields, value: string) =>
+    setValues((current) => ({ ...current, [key]: value }));
   const archived = status === "archived";
   const publicationUnavailable =
     (status === "draft" || status === "hidden") && photoCount === 0;
@@ -94,8 +127,9 @@ export function ProductForm({
       {options?.multiline ? (
         <textarea
           name={key}
-          defaultValue={values[key]}
-          disabled={archived}
+          value={values[key]}
+          onChange={(event) => setField(key, event.target.value)}
+          disabled={archived || locked}
           rows={5}
           aria-invalid={Boolean(errors[key])}
           aria-required={options.required}
@@ -105,8 +139,9 @@ export function ProductForm({
         <input
           name={key}
           type={options?.type ?? "text"}
-          defaultValue={values[key]}
-          disabled={archived}
+          value={values[key]}
+          onChange={(event) => setField(key, event.target.value)}
+          disabled={archived || locked}
           aria-invalid={Boolean(errors[key])}
           aria-required={options?.required}
           aria-describedby={errors[key] ? `${key}-error` : undefined}
@@ -121,6 +156,13 @@ export function ProductForm({
   );
   return (
     <>
+      {!onDirtyChange && (
+        <StandaloneNavigationGuard
+          shouldWarn={shouldWarn}
+          pending={pending}
+          submitting={submittingThisForm}
+        />
+      )}
       {feedback?.error && (
         <div className="admin-alert admin-product-feedback" role="alert">
           {feedback.error}
@@ -134,8 +176,18 @@ export function ProductForm({
       <Form
         method="post"
         className="admin-product-form"
-        onChange={() => setDirty(true)}
+        onChange={(event) => {
+          const name = (event.target as HTMLElement).getAttribute("name");
+          if (!name || !(name in emptyFields)) return;
+          setDirty(true);
+          onDirtyChange?.(true);
+        }}
         onSubmit={(event) => {
+          if (onCreateSubmit) {
+            event.preventDefault();
+            onCreateSubmit(event.currentTarget);
+            return;
+          }
           const submitter = (event.nativeEvent as SubmitEvent)
             .submitter as HTMLButtonElement | null;
           if (
@@ -145,10 +197,17 @@ export function ProductForm({
             )
           ) {
             submittingThisForm.current = false;
+            onSubmittingChange?.(false);
+            event.preventDefault();
+          } else if (confirmBeforeSubmit && !confirmBeforeSubmit()) {
+            submittingThisForm.current = false;
+            onSubmittingChange?.(false);
             event.preventDefault();
           } else {
             submittingThisForm.current = true;
+            onSubmittingChange?.(true);
             setDirty(false);
+            onDirtyChange?.(false);
           }
         }}
       >
@@ -160,7 +219,13 @@ export function ProductForm({
         )}
         <div className="admin-form-intro">
           <p className="admin-form-kicker">Product information</p>
-          <h2>{version === undefined ? "Create a product" : "Edit product"}</h2>
+          <h2>
+            {locked
+              ? "Saved product details"
+              : version === undefined
+                ? "Create a product"
+                : "Edit product"}
+          </h2>
           <p>Start with the details customers need to recognize your piece.</p>
         </div>
         <section
@@ -185,8 +250,9 @@ export function ProductForm({
               </span>
               <select
                 name="categoryId"
-                defaultValue={values.categoryId}
-                disabled={archived}
+                value={values.categoryId}
+                onChange={(event) => setField("categoryId", event.target.value)}
+                disabled={archived || locked}
                 aria-invalid={Boolean(errors.categoryId)}
                 aria-required="true"
                 aria-describedby={
@@ -232,111 +298,113 @@ export function ProductForm({
             </div>
           </div>
         </section>
+        {photoEditor}
         <div className="admin-form-footer">
-          {version === undefined && (
+          {version === undefined && !locked && (
             <p className="admin-form-draft-note">
               <strong>Save as Draft</strong>
               <span>
-                This product stays off the website. Add a photo before
-                publishing; photo management is coming later.
+                Enter details and choose photos, then Save once. The Draft stays
+                private until you publish it.
               </span>
             </p>
           )}
-          {publicationUnavailable && (
+          {publicationUnavailable && !locked && (
             <p className="admin-note">
-              Add a photo before showing this product. Photo management is
-              coming later.
+              Add a photo before showing this product.
             </p>
           )}
-          <div className="admin-form-actions">
-            {archived ? (
-              <button
-                className="admin-save-button"
-                type="submit"
-                name="intent"
-                value="restore"
-                disabled={pending}
-              >
-                Restore to Draft
-              </button>
-            ) : (
-              <>
+          {!locked && (
+            <div className="admin-form-actions">
+              {archived ? (
                 <button
                   className="admin-save-button"
                   type="submit"
                   name="intent"
-                  value={version === undefined ? "create" : "save"}
+                  value="restore"
                   disabled={pending}
                 >
-                  {pending ? "Saving…" : "Save"}
+                  Restore to Draft
                 </button>
-                {version !== undefined && (
-                  <>
-                    {status === "draft" && (
+              ) : (
+                <>
+                  <button
+                    className="admin-save-button"
+                    type="submit"
+                    name="intent"
+                    value={version === undefined ? "create" : "save"}
+                    disabled={pending || saveBusy}
+                  >
+                    {saveBusy ? "Saving Draft…" : pending ? "Saving…" : "Save"}
+                  </button>
+                  {version !== undefined && (
+                    <>
+                      {status === "draft" && (
+                        <button
+                          type="submit"
+                          name="intent"
+                          value="publish"
+                          disabled={pending || publicationUnavailable}
+                        >
+                          Publish
+                        </button>
+                      )}
+                      {status !== "sold" && (
+                        <button
+                          type="submit"
+                          name="intent"
+                          value="mark-sold"
+                          disabled={pending || publicationUnavailable}
+                        >
+                          {status === "hidden" ? "Show Sold" : "Mark Sold"}
+                        </button>
+                      )}
+                      {(status === "sold" || status === "hidden") && (
+                        <button
+                          type="submit"
+                          name="intent"
+                          value="mark-available"
+                          disabled={pending || publicationUnavailable}
+                        >
+                          {status === "hidden"
+                            ? "Show Available"
+                            : "Mark Available"}
+                        </button>
+                      )}
+                      {status !== "hidden" && (
+                        <button
+                          type="submit"
+                          name="intent"
+                          value="hide"
+                          disabled={pending}
+                        >
+                          Hide
+                        </button>
+                      )}
+                      {status !== "draft" && (
+                        <button
+                          type="submit"
+                          name="intent"
+                          value="draft"
+                          disabled={pending}
+                        >
+                          Move to Draft
+                        </button>
+                      )}
                       <button
                         type="submit"
                         name="intent"
-                        value="publish"
-                        disabled={pending || publicationUnavailable}
-                      >
-                        Publish
-                      </button>
-                    )}
-                    {status !== "sold" && (
-                      <button
-                        type="submit"
-                        name="intent"
-                        value="mark-sold"
-                        disabled={pending || publicationUnavailable}
-                      >
-                        {status === "hidden" ? "Show Sold" : "Mark Sold"}
-                      </button>
-                    )}
-                    {(status === "sold" || status === "hidden") && (
-                      <button
-                        type="submit"
-                        name="intent"
-                        value="mark-available"
-                        disabled={pending || publicationUnavailable}
-                      >
-                        {status === "hidden"
-                          ? "Show Available"
-                          : "Mark Available"}
-                      </button>
-                    )}
-                    {status !== "hidden" && (
-                      <button
-                        type="submit"
-                        name="intent"
-                        value="hide"
+                        value="archive"
                         disabled={pending}
                       >
-                        Hide
+                        Archive
                       </button>
-                    )}
-                    {status !== "draft" && (
-                      <button
-                        type="submit"
-                        name="intent"
-                        value="draft"
-                        disabled={pending}
-                      >
-                        Move to Draft
-                      </button>
-                    )}
-                    <button
-                      type="submit"
-                      name="intent"
-                      value="archive"
-                      disabled={pending}
-                    >
-                      Archive
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-          </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </Form>
       <p>

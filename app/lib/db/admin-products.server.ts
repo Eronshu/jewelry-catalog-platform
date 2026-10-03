@@ -293,6 +293,21 @@ function requestKey(value: string) {
   return value.toLowerCase();
 }
 
+export async function findCreationRequest(db: D1Database, rawKey: string) {
+  const key = requestKey(rawKey);
+  return db
+    .prepare(
+      "SELECT id, status, updated_at AS version, business_updated_at AS businessVersion FROM products WHERE creation_request_key = ?",
+    )
+    .bind(key)
+    .first<{
+      id: number;
+      status: ProductStatus;
+      version: number;
+      businessVersion: number;
+    }>();
+}
+
 async function replay(db: D1Database, key: string, hash: string) {
   const row = await db
     .prepare(
@@ -354,8 +369,8 @@ export async function createDraft(
         .prepare(
           `INSERT INTO products
         (name, slug, sku, description, price_cents, category_id, material, colour, status, quantity,
-         facebook_url, created_at, updated_at, creation_request_key, creation_request_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?) RETURNING id`,
+         facebook_url, created_at, updated_at, business_updated_at, creation_request_key, creation_request_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
         )
         .bind(
           fields.name,
@@ -368,6 +383,7 @@ export async function createDraft(
           fields.colour,
           fields.quantity,
           fields.facebookUrl,
+          now,
           now,
           now,
           key,
@@ -423,13 +439,14 @@ export async function duplicateDraft(
         .prepare(
           `INSERT INTO products
         (name, slug, description, price_cents, category_id, material, colour, status,
-         created_at, updated_at, creation_request_key, creation_request_hash)
-        SELECT ?, ?, description, price_cents, category_id, material, colour, 'draft', ?, ?, ?, ?
+         created_at, updated_at, business_updated_at, creation_request_key, creation_request_hash)
+        SELECT ?, ?, description, price_cents, category_id, material, colour, 'draft', ?, ?, ?, ?, ?
         FROM products WHERE id = ? AND updated_at = ? RETURNING id`,
         )
         .bind(
           `${source.name} copy`,
           slugCandidate(base, attempt),
+          now,
           now,
           now,
           key,
@@ -596,6 +613,7 @@ export async function changeProduct(
   values.push(
     status,
     now,
+    now,
     status === "available" || status === "sold" ? now : null,
     id,
     version,
@@ -606,7 +624,7 @@ export async function changeProduct(
   try {
     result = await db
       .prepare(
-        `UPDATE products SET ${updates}status = ?, updated_at = ?,
+        `UPDATE products SET ${updates}status = ?, updated_at = ?, business_updated_at = ?,
       published_at = CASE WHEN published_at IS NULL THEN ? ELSE published_at END
       WHERE id = ? AND updated_at = ? AND status = ?${coverCheck}`,
       )

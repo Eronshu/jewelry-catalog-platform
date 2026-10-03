@@ -106,7 +106,7 @@ describe("admin product navigation", () => {
         .disabled,
     ).toBe(true);
     expect(document.body.textContent).toContain(
-      "Add a photo before showing this product",
+      "Add a photo on the product edit page before showing this product.",
     );
 
     const context = new RouterContextProvider();

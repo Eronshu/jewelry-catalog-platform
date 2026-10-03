@@ -3,6 +3,9 @@ import { Link, useActionData } from "react-router";
 
 import { AdminShell } from "../../app/components/admin/admin-shell";
 import { ProductForm } from "../../app/components/admin/product-form";
+import { ProductPhotos } from "../../app/components/admin/product-photos";
+
+const noPhotos: [] = [];
 
 const categories = [
   { id: 1, name: "Earrings", slug: "earrings", sortOrder: 0, isActive: true },
@@ -16,6 +19,7 @@ export function PreviewLinks() {
       <Link to="/list">List</Link>
       <Link to="/form">Form</Link>
       <Link to="/error">Form errors</Link>
+      <Link to="/photos">Photos</Link>
     </nav>
   );
 }
@@ -28,7 +32,7 @@ export function PreviewForm({ error = false }: { error?: boolean }) {
       <div className="admin-page-heading">
         <div>
           <h1>Add product</h1>
-          <p>Save a Draft to get started.</p>
+          <p>Enter product details, choose photos, then Save once.</p>
         </div>
       </div>
       {actionData?.previewMessage && (
@@ -39,6 +43,17 @@ export function PreviewForm({ error = false }: { error?: boolean }) {
       <ProductForm
         categories={categories}
         requestKey="preview-only"
+        photoEditor={
+          <ProductPhotos
+            productId={null}
+            status="draft"
+            initialPhotos={noPhotos}
+            version={0}
+            businessVersion={0}
+            onVersion={() => {}}
+            createMode
+          />
+        }
         feedback={
           error
             ? {

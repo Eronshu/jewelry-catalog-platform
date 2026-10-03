@@ -275,8 +275,8 @@ export default function AdminProducts({
                           </button>
                           {item.coverId === null && (
                             <span className="admin-action-note">
-                              Add a photo before showing this product. Photo
-                              management is coming later.
+                              Add a photo on the product edit page before
+                              showing this product.
                             </span>
                           )}
                         </>

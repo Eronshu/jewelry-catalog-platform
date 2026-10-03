@@ -78,13 +78,13 @@ product before reading R2. New original keys must be immutable and have the
 form `products/<product-id>/<uuid>.jpg`, `.jpeg`, `.png`, or `.webp`.
 Replacing a photo requires a new key and image row so cached URLs are not
 reused. Delivery validates the object's R2 `httpMetadata.contentType`; the D1
-table has no content type column and does not need a migration for this issue.
+table has no content type column.
 Workers Cache can serve a hit before the Worker checks D1. A photo that was
 public may therefore remain available at its cached URL after its product is
 marked Hidden or Archived, until that entry expires. The D1 public-status
 check applies on a cache miss and is not an immediate revocation guarantee.
-Future admin removal needs a purge or a shorter cache policy if prompt
-revocation is required.
+Admin removal does not immediately revoke a previously cached public response;
+a purge or shorter cache policy is needed if prompt revocation is required.
 
 To verify the pipeline without product photography, generate one small,
 fictional checker image locally:
@@ -175,7 +175,7 @@ changing status from an edit form validates and saves every displayed field in
 one version-checked update. List quick actions submit only the displayed
 product version. A stale action asks the owner to refresh rather than
 overwriting another tab's edit. Archived products are read-only until restored
-to Draft. There is no permanent deletion or photo management in this issue.
+to Draft. There is no permanent product deletion.
 
 The `0002` migration stores a unique request key and payload hash on created
 products. Retrying the same create or duplicate request returns the original
@@ -189,9 +189,100 @@ action. The public image route and its existing cache behavior are unchanged.
 For local list, search, filter, and form presentation, apply local migrations
 and the 24-row fictional seed as described above. Its image rows are metadata
 placeholders, so they cannot prove a thumbnail or publication. The standalone
-`npm run admin:shell:preview` fixture now provides Welcome, List, Form, and
-Form errors scenes at `/`, `/list`, `/form`, and `/error`. It is presentation
-only; submitting it does not exercise product actions or authentication.
+`npm run admin:shell:preview` fixture now provides Welcome, List, Form, Form
+errors, and Photos scenes at `/`, `/list`, `/form`, `/error`, and `/photos`. The
+Form scene shows the one-Save photo picker. It is presentation only; submitting
+it does not exercise product actions or authentication.
+
+### Protected product photos
+
+On Add product, enter details and select photos before clicking Save. The page
+creates a private Draft, then uploads valid selections sequentially. Product
+details become a saved, locked summary once creation is confirmed. Failed
+photos can be retried without creating another Draft or resending successful
+photos; invalid selections can be removed or replaced. The page opens Edit
+automatically when the selected queue is resolved, and offers an Edit Draft link
+while photos need attention. The ordinary no-JavaScript form still creates a
+Draft and redirects to Edit without uploading photos.
+
+The Add photos button opens the file picker; the surrounding area accepts dropped files but does not open the picker when clicked. The picker accepts multiple
+JPEG, PNG, or still WebP files up to **18,000,000 bytes each**, with at most 10
+files and 100 MB selected at once. The editor separates unsaved local previews
+from saved photos, uploads one file at a time, shows per-file progress, and
+retries failures without resending successes. HEIC/HEIF, animated WebP, and
+APNG are rejected clearly. Files over the limit are not downscaled: an accepted
+private R2 original contains the exact selected bytes. Existing fixed image
+profiles transform that original for public delivery. Photos beyond the cap
+remain an explicit limit for protected-preview review.
+Before Save on Add, selected photos can be dragged by their handles or moved
+with the Move earlier and Move later buttons into the desired upload order;
+the first successfully saved photo becomes the cover. On Edit, drag a saved
+photo by its handle to reorder it, or use the same buttons. Compact photo rows
+show the current order; each row's Actions control opens its secondary tools.
+The first saved photo is the cover. Reordering saves
+the photo order immediately; product details have their own Save action.
+Describe this photo edits alternative text, not pixels. Cropping, resizing the
+original, and adding visible text to an image are not part of this issue.
+
+On Add, navigation warns while details are unsaved, files remain selected, or
+creation/uploads are active. An in-flight request may finish after the owner
+confirms leaving, but later queued photos do not start. A same-tab reload keeps only the creation request key and a
+known Draft ID long enough to look up saved server state; selected browser files
+are lost and uploads do not resume. If the lookup is uncertain, check Products
+before starting another Draft. No photo bytes, upload UUIDs, or digests are
+stored for reload recovery.
+
+Leaving the edit page while an upload is uploading or finishing prompts once,
+including through in-app Back and browser history. Unsaved product details use
+the same prompt; completed or merely selected photos do not trigger it. If the
+owner confirms leaving, the editor does not explicitly abort the request, but
+its final result is uncertain after navigation or page unload; later queued
+photos do not start. On returning,
+the editor reloads saved photos; the owner should check that list before
+selecting the file again. Retries while the editor stays open retain the same
+upload UUID.
+
+Migration `0003` stores a stable upload UUID, canonical product-specific R2
+key, byte length, SHA-256, type, reservation state, and committed version. It
+also records the last business-field revision separately from photo revisions.
+The server verifies the
+digest against the bounded request bytes, including on retry; it never trusts
+the browser digest header alone. A D1 image row is inserted only after R2 put
+and image validation. An active reservation with an R2 object can be completed
+on retry after a D1 failure or lost response. An interrupted R2 write releases
+its reservation for an immediate retry. A live write renews a five-second
+lease; after an unexpected worker stop, an identical retry can take over when
+that lease expires. Conditional R2 writes keep the original immutable. A committed retry returns the
+current photo snapshot. The product form advances with that snapshot only if
+its business fields have not changed elsewhere. `Content-Length` is optional;
+the server measures the actual request and compares any declared length.
+The ascending unique
+`sort_order` defines the cover. Photo mutations use versioned, guarded D1
+batches. Protected previews enforce Access and product/image ownership for all
+statuses and send `private, no-store`; public media eligibility is unchanged.
+Previously cached public image URLs retain their delayed-revocation limit.
+
+The fictional seed's placeholder rows are not upload evidence. The isolated
+photo tests create a temporary local D1/R2 environment, apply migrations, use
+the synthetic files under `tests/fixtures`, and remove their bindings. The
+`/photos` admin shell scene is a **visual fixture only**. Its illustrated photos
+and reorder feedback are temporary; it cannot save data.
+`npm run typecheck` includes this fixture so its component props stay current.
+
+R2 and D1 do not commit atomically. To reconcile old orphans, an operator must
+identify expired active reservations, mark one abandoned only when no image
+row references its upload ID, and recheck the exact R2 key for D1 references
+before deletion. Keep terminal reservations so late retries cannot recreate a
+removed photo. Repeat the sweep after the lease window to catch an in-flight
+writer that finishes late. Removal commits D1 first; failed R2 deletion is
+logged and can be retried through the reference-aware removed-upload reconciler.
+Never bulk-delete a
+product prefix. Production cleanup needs a separately reviewed key list and
+human approval.
+
+Before real owner use, verify real Cloudflare Access, deployed Static Assets
+routing, production Images behavior, and physical iPhone Safari on a protected
+preview. Local simulation and the visual fixture cannot establish those gates.
 
 Run `npm test` for isolated functional QA. Admin D1/R2 tests create their own
 temporary local persistence directory, apply migrations there, create an
