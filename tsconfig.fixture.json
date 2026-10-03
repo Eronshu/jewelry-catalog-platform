@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.cloudflare.json",
+  "include": [
+    ".react-router/types/**/*",
+    "tests/admin-shell-preview/**/*",
+    "worker-configuration.d.ts"
+  ],
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  }
+}

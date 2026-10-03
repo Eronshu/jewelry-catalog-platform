@@ -19,7 +19,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
+    "typecheck": "npm run cf-typegen && react-router typegen && tsc -b && tsc --project tsconfig.fixture.json --noEmit",
     "validate": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {

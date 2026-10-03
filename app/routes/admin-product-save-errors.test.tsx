@@ -13,9 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cloudflareContext } from "../cloudflare-context";
 import { adminPrincipalContext } from "../lib/auth/admin-access.server";
-import { changeProduct, createDraft } from "../lib/db/admin-products.server";
+import {
+  changeProduct,
+  createDraft,
+  findCreationRequest,
+} from "../lib/db/admin-products.server";
 import EditProduct, { action as editAction } from "./admin-product-edit";
-import NewProduct, { action as newAction } from "./admin-product-new";
+import NewProduct from "./admin-product-new";
+import { action as createAction } from "./admin-product-create";
 
 vi.mock("../lib/auth/admin-mutation.server", () => ({
   readAdminForm: (request: Request) => request.formData(),
@@ -24,6 +29,7 @@ vi.mock("../lib/auth/admin-mutation.server", () => ({
 vi.mock("../lib/db/admin-products.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/db/admin-products.server")>()),
   createDraft: vi.fn(),
+  findCreationRequest: vi.fn(),
   changeProduct: vi.fn(),
 }));
 
@@ -110,6 +116,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   window.confirm = vi.fn().mockReturnValue(false);
   actionResult = undefined;
+  sessionStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -117,6 +124,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+  sessionStorage.clear();
 });
 
 describe("operational product save failures", () => {
@@ -124,20 +132,44 @@ describe("operational product save failures", () => {
     vi.mocked(createDraft)
       .mockRejectedValueOnce(new Error("private SQL details"))
       .mockResolvedValueOnce(91);
+    vi.mocked(findCreationRequest).mockResolvedValue({
+      id: 91,
+      status: "draft",
+      version: 100,
+      businessVersion: 100,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, options: { body: URLSearchParams }) => {
+        actionResult = await createAction({
+          request: new Request(
+            "https://example.invalid/admin/products/new/create",
+            {
+              method: "POST",
+              headers: {
+                Origin: "https://example.invalid",
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: options.body,
+            },
+          ),
+          context: context(),
+        } as never);
+        const reply = actionResult as {
+          data: unknown;
+          init?: { status?: number };
+        };
+        return new Response(JSON.stringify(reply.data), {
+          status: reply.init?.status ?? 200,
+        });
+      }),
+    );
     const router = createMemoryRouter(
       [
         {
           path: "/admin/products/new",
           loader: () => ({ categories, requestKey: crypto.randomUUID() }),
           element: <NewPage />,
-          action: async ({ request, params }) => {
-            actionResult = await newAction({
-              request,
-              params,
-              context: context(),
-            } as never);
-            return actionResult;
-          },
         },
         { path: "/admin/products/91/edit", element: <p>Created Draft</p> },
       ],
@@ -157,7 +189,7 @@ describe("operational product save failures", () => {
     });
     expect(document.querySelector("form.admin-product-form")).not.toBeNull();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      "Could not save this product",
+      "Could not confirm the Draft",
     );
     expect(document.body.textContent).not.toContain("private SQL details");
     expect(
@@ -167,7 +199,13 @@ describe("operational product save failures", () => {
       (document.querySelector('input[name="requestKey"]') as HTMLInputElement)
         .value,
     ).toBe(originalKey);
-    await save();
+    await act(async () => {
+      (
+        Array.from(document.querySelectorAll("button")).find(
+          (item) => item.textContent?.trim() === "Retry saving Draft",
+        ) as HTMLButtonElement
+      ).click();
+    });
     expect(vi.mocked(createDraft).mock.calls.map((call) => call[2])).toEqual([
       originalKey,
       originalKey,

@@ -6,7 +6,21 @@ export default [
   route("admin", "routes/admin.tsx"),
   route("admin/products", "routes/admin-products.tsx"),
   route("admin/products/new", "routes/admin-product-new.tsx"),
+  route("admin/products/new/create", "routes/admin-product-create.ts"),
   route("admin/products/:productId/edit", "routes/admin-product-edit.tsx"),
+  route("admin/products/:productId/photos", "routes/admin-product-photos.ts"),
+  route(
+    "admin/products/:productId/photos/upload",
+    "routes/admin-product-photo-upload.ts",
+  ),
+  route(
+    "admin/products/:productId/photos/:photoId",
+    "routes/admin-product-photo.ts",
+  ),
+  route(
+    "admin/products/:productId/photos/:photoId/preview",
+    "routes/admin-product-photo-preview.ts",
+  ),
   route(
     "media/products/:productId/:imageId/:profile",
     "routes/media-product-image.ts",

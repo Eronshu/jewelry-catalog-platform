@@ -1206,3 +1206,178 @@ a {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Protected product photo editor */
+.admin-photo-section {
+  margin-top: 1.5rem;
+}
+.admin-photo-picker {
+  border: 1px dashed #9c9790;
+  padding: 1rem;
+  background: #faf8f4;
+}
+.admin-photo-picker-trigger {
+  border: 0;
+  background: transparent;
+  color: #681c29;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.admin-photo-picker p {
+  margin: 0.5rem 0 0;
+  color: #514d49;
+}
+.admin-photo-grid {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: 0.65rem;
+}
+.admin-photo-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid #c9c4bd;
+  background: #fff;
+}
+.admin-photo-summary {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) 2.75rem;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.5rem;
+}
+.admin-photo-identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  line-height: 1.25;
+}
+.admin-photo-identity strong,
+.admin-photo-identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-photo-identity strong {
+  display: block;
+}
+.admin-photo-identity .admin-photo-error {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.admin-photo-position {
+  color: #514d49;
+  font-size: 0.78rem;
+}
+.admin-photo-dragging {
+  opacity: 0.6;
+}
+.admin-photo-drag-target {
+  outline: 3px solid #681c29;
+  outline-offset: 2px;
+}
+.admin-photo-drag-handle {
+  touch-action: none;
+  cursor: grab;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.admin-photo-drag-handle:active {
+  cursor: grabbing;
+}
+.admin-photo-summary img {
+  width: 3.5rem;
+  height: 3.5rem;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: #f3f0ea;
+}
+.admin-photo-preview-fallback {
+  display: flex;
+  width: 3.5rem;
+  height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  background: #f3f0ea;
+  color: #514d49;
+  font-size: 0.68rem;
+  line-height: 1.15;
+  text-align: center;
+}
+.admin-photo-details {
+  min-width: 0;
+  border-top: 1px solid #e6e0d9;
+}
+.admin-photo-details summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: #681c29;
+  font-weight: 600;
+  cursor: pointer;
+}
+.admin-photo-details summary::before {
+  content: "▸";
+  margin-right: 0.4rem;
+}
+.admin-photo-details[open] summary::before {
+  content: "▾";
+}
+.admin-photo-edit-actions {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.admin-photo-card label {
+  display: grid;
+  gap: 0.4rem;
+}
+.admin-photo-card input {
+  width: 100%;
+  min-width: 0;
+}
+.admin-photo-card progress {
+  width: 100%;
+}
+.admin-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-top: 0.25rem;
+}
+.admin-photo-actions button {
+  flex: 1 1 auto;
+}
+.admin-photo-section button {
+  min-height: 44px;
+  padding: 0.5rem 0.7rem;
+}
+.admin-photo-section button:focus-visible,
+.admin-photo-section input:focus-visible,
+.admin-photo-section summary:focus-visible {
+  outline: 2px solid #681c29;
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .admin-photo-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-photo-card {
+    padding: 0.4rem;
+  }
+  .admin-photo-summary {
+    gap: 0.5rem;
+  }
+}

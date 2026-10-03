@@ -1,6 +1,10 @@
-import { createRequestHandler } from "react-router";
+import {
+  createRequestHandler,
+  useActionData,
+  useLoaderData,
+} from "react-router";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
@@ -12,6 +16,9 @@ import * as Root from "../root";
 import * as Home from "./home";
 import * as Admin from "./admin";
 import * as AdminProductNew from "./admin-product-new";
+import * as AdminProductCreate from "./admin-product-create";
+import * as AdminPhotoUpload from "./admin-product-photo-upload";
+import * as AdminPhotoPreview from "./admin-product-photo-preview";
 import { handleWorkerRequest } from "../../workers/app";
 
 const issuer = "https://integration-team.cloudflareaccess.com";
@@ -23,6 +30,21 @@ const env = {
   ADMIN_ACCESS_AUD: audience,
   ADMIN_IDENTITY_PAIRS: JSON.stringify([{ email, sub }]),
 } as unknown as Env;
+
+function NewProductWithFrameworkProps() {
+  return (
+    <AdminProductNew.default
+      {...({
+        loaderData: useLoaderData(),
+        actionData: useActionData(),
+      } as Parameters<typeof AdminProductNew.default>[0])}
+    />
+  );
+}
+const newProductRouteModule = {
+  ...AdminProductNew,
+  default: NewProductWithFrameworkProps,
+};
 
 const routeEntries = {
   root: {
@@ -47,7 +69,28 @@ const routeEntries = {
         id: "routes/admin-product-new",
         parentId: "root",
         path: "admin/products/new",
-        module: AdminProductNew,
+        module: newProductRouteModule,
+        children: [],
+      },
+      {
+        id: "routes/admin-product-create",
+        parentId: "root",
+        path: "admin/products/new/create",
+        module: AdminProductCreate,
+        children: [],
+      },
+      {
+        id: "routes/admin-product-photo-upload",
+        parentId: "root",
+        path: "admin/products/:productId/photos/upload",
+        module: AdminPhotoUpload,
+        children: [],
+      },
+      {
+        id: "routes/admin-product-photo-preview",
+        parentId: "root",
+        path: "admin/products/:productId/photos/:photoId/preview",
+        module: AdminPhotoPreview,
         children: [],
       },
     ],
@@ -68,7 +111,25 @@ const routeEntries = {
     id: "routes/admin-product-new",
     parentId: "root",
     path: "admin/products/new",
-    module: AdminProductNew,
+    module: newProductRouteModule,
+  },
+  "routes/admin-product-create": {
+    id: "routes/admin-product-create",
+    parentId: "root",
+    path: "admin/products/new/create",
+    module: AdminProductCreate,
+  },
+  "routes/admin-product-photo-upload": {
+    id: "routes/admin-product-photo-upload",
+    parentId: "root",
+    path: "admin/products/:productId/photos/upload",
+    module: AdminPhotoUpload,
+  },
+  "routes/admin-product-photo-preview": {
+    id: "routes/admin-product-photo-preview",
+    parentId: "root",
+    path: "admin/products/:productId/photos/:photoId/preview",
+    module: AdminPhotoPreview,
   },
 };
 
@@ -118,6 +179,35 @@ const build = {
         ),
         parentId: "root",
         path: "admin/products/new",
+      },
+      "routes/admin-product-create": {
+        ...assetRoute(
+          "routes/admin-product-create",
+          "/admin-product-create.js",
+          false,
+          true,
+        ),
+        parentId: "root",
+        path: "admin/products/new/create",
+      },
+      "routes/admin-product-photo-upload": {
+        ...assetRoute(
+          "routes/admin-product-photo-upload",
+          "/admin-product-photo-upload.js",
+          false,
+          true,
+        ),
+        parentId: "root",
+        path: "admin/products/:productId/photos/upload",
+      },
+      "routes/admin-product-photo-preview": {
+        ...assetRoute(
+          "routes/admin-product-photo-preview",
+          "/admin-product-photo-preview.js",
+          true,
+        ),
+        parentId: "root",
+        path: "admin/products/:productId/photos/:photoId/preview",
       },
     },
     url: "/manifest.js",
@@ -286,6 +376,25 @@ describe("Worker to React Router admin boundary", () => {
         remoteBindings: false,
       });
       const productEnv = { ...platform.env, ...env } as Env;
+      const addDocument = await handleWorkerRequest(
+        new Request("https://example.invalid/admin/products/new", {
+          headers: { "Cf-Access-Jwt-Assertion": await token() },
+        }),
+        productEnv,
+        {} as ExecutionContext,
+        routeHandler,
+      );
+      expect(addDocument.status).toBe(200);
+      expect(addDocument.headers.get("Cache-Control")).toBe(
+        "private, no-store",
+      );
+      const addHtml = await addDocument.text();
+      expect(addHtml).toContain("Add product");
+      expect(addHtml).toContain('name="requestKey"');
+      expect(addHtml).toContain('value="create"');
+      expect(addHtml).toContain("Saving creates a private Draft");
+      expect(addHtml).not.toContain("Checking for a previously saved Draft");
+      expect(addHtml).not.toContain('id="photo-picker"');
       const requestKey = crypto.randomUUID();
       const body = new URLSearchParams({
         intent: "create",
@@ -327,6 +436,15 @@ describe("Worker to React Router admin boundary", () => {
         expect(denied.status).toBe(status);
         expect(denied.headers.get("Cache-Control")).toBe("private, no-store");
         expect(await count()).toBe(0);
+        const deniedEnhanced = await post(
+          "/admin/products/new/create",
+          assertion,
+        );
+        expect(deniedEnhanced.status).toBe(status);
+        expect(deniedEnhanced.headers.get("Cache-Control")).toBe(
+          "private, no-store",
+        );
+        expect(await count()).toBe(0);
       }
       const approved = await post("/admin/products/new.data", await token());
       expect(approved.headers.get("Cache-Control")).toBe("private, no-store");
@@ -349,6 +467,22 @@ describe("Worker to React Router admin boundary", () => {
         `/admin/products/${row!.id}/edit`,
       );
       expect(await count()).toBe(1);
+      const enhancedReplay = await post(
+        "/admin/products/new/create",
+        await token(),
+      );
+      expect(enhancedReplay.status).toBe(200);
+      expect(enhancedReplay.headers.get("Cache-Control")).toBe(
+        "private, no-store",
+      );
+      const enhancedBody = (await enhancedReplay.json()) as {
+        product: unknown;
+      };
+      expect(enhancedBody.product).toMatchObject({
+        id: row!.id,
+        status: "draft",
+      });
+      expect(await count()).toBe(1);
       const documentReplay = await post("/admin/products/new", await token());
       expect(documentReplay.status).toBe(302);
       expect(documentReplay.headers.get("Location")).toBe(
@@ -358,6 +492,69 @@ describe("Worker to React Router admin boundary", () => {
         "private, no-store",
       );
       expect(await count()).toBe(1);
+
+      const photoBytes = readFileSync(
+        resolve("tests/fixtures/still-photo.png"),
+      );
+      const photoHash = Array.from(
+        new Uint8Array(await crypto.subtle.digest("SHA-256", photoBytes)),
+        (value) => value.toString(16).padStart(2, "0"),
+      ).join("");
+      const uploadId = crypto.randomUUID();
+      const version = (await platform.env.DB.prepare(
+        "SELECT updated_at FROM products WHERE id = ?",
+      )
+        .bind(row!.id)
+        .first<{ updated_at: number }>())!.updated_at;
+      const upload = async (assertion?: string) =>
+        handleWorkerRequest(
+          new Request(
+            `https://example.invalid/admin/products/${row!.id}/photos/upload`,
+            {
+              method: "POST",
+              headers: {
+                Origin: "https://example.invalid",
+                "Content-Type": "image/png",
+                "Content-Length": String(photoBytes.length),
+                "X-Upload-Id": uploadId,
+                "X-Photo-Sha256": photoHash,
+                "X-Product-Version": String(version),
+                ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+              },
+              body: Uint8Array.from(photoBytes),
+            },
+          ),
+          productEnv,
+          {} as ExecutionContext,
+          routeHandler,
+        );
+      expect((await upload()).status).toBe(401);
+      expect(
+        (await platform.env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM product_images",
+        ).first<{ n: number }>())!.n,
+      ).toBe(0);
+      const uploaded = await upload(await token());
+      expect(uploaded.status).toBe(200);
+      expect(uploaded.headers.get("Cache-Control")).toBe("private, no-store");
+      const image = await platform.env.DB.prepare(
+        "SELECT id FROM product_images WHERE product_id = ?",
+      )
+        .bind(row!.id)
+        .first<{ id: number }>();
+      expect(image?.id).toBeGreaterThan(0);
+      const previewPath = `/admin/products/${row!.id}/photos/${image!.id}/preview`;
+      expect((await request(previewPath)).status).toBe(401);
+      const preview = await handleWorkerRequest(
+        new Request(`https://example.invalid${previewPath}`, {
+          headers: { "Cf-Access-Jwt-Assertion": await token() },
+        }),
+        productEnv,
+        {} as ExecutionContext,
+        routeHandler,
+      );
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get("Cache-Control")).toBe("private, no-store");
     } finally {
       await platform?.dispose();
       rmSync(localDir, { recursive: true, force: true });
