@@ -33,19 +33,13 @@ function product(
     name: "Demo Orbit Hoops",
     priceCents: 2599,
     status: "available",
-    categoryId: 1,
-    material: "silver",
-    colour: "silver",
     createdAt: 1780000000000,
     coverImage: {
       id: 2001,
-      productId: 1001,
-      r2Key: "dev/products/demo-orbit-hoops/01.jpg",
       altText: "Demo Orbit Hoops, front view",
       sortOrder: 0,
       width: 1400,
       height: 1400,
-      createdAt: 1780000000000,
     },
     ...overrides,
   };
@@ -81,12 +75,20 @@ describe("shop route", () => {
           name: "Demo Orbit Hoops",
           priceCents: 2599,
           status: "available",
+          cover: {
+            url: "/media/products/1001/2001/card",
+            altText: "Demo Orbit Hoops, front view",
+          },
         },
         {
           slug: "demo-sold-ring",
           name: "Demo Sold Ring",
           priceCents: 2599,
           status: "sold",
+          cover: {
+            url: "/media/products/1002/2001/card",
+            altText: "Demo Orbit Hoops, front view",
+          },
         },
       ],
     });
@@ -100,12 +102,14 @@ describe("shop route", () => {
         name: "Demo Orbit Hoops",
         priceCents: 2400,
         status: "available",
+        cover: { url: "/media/products/1001/2001/card", altText: null },
       },
       {
         slug: "demo-sold-ring",
         name: "Demo Sold Ring",
         priceCents: 2599,
         status: "sold",
+        cover: null,
       },
     ]);
 
@@ -113,13 +117,13 @@ describe("shop route", () => {
     expect(markup).toContain("Browse the collection");
     expect(markup).toContain("Prices in CAD");
     expect(markup.match(/class="shop-product-card"/g)).toHaveLength(2);
-    expect(
-      markup.match(/class="shop-product-image shop-product-placeholder"/g),
-    ).toHaveLength(2);
+    expect(markup).toContain('src="/media/products/1001/2001/card"');
+    expect(markup).toContain("Photo unavailable");
     expect(markup).toContain("$24.00");
     expect(markup).toContain("$25.99");
     expect(markup).toContain("Sold Out");
-    expect(markup).not.toContain('href="/products/');
+    expect(markup).toContain('href="/products/demo-orbit-hoops"');
+    expect(markup).toContain('href="/products/demo-sold-ring"');
     expect(markup).not.toContain("dev/products/");
     expect(markup).not.toContain("Design-review only");
   });

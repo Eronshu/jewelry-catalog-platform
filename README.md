@@ -4,10 +4,10 @@ A Cloudflare-native React Router application for a small-business jewelry
 catalog and its future owner-facing administration tools. The V1 product scope
 and architecture are defined in [PROJECT_SPEC.md](./PROJECT_SPEC.md).
 
-The Shop route reads public products from its D1 binding. Home still uses a
-labeled visual design fixture. Private local R2 image delivery is configured,
-but Shop cards deliberately retain placeholders until real catalog imagery is
-integrated. A protected admin foundation is present, but real Cloudflare Access
+The Shop route reads public products from its D1 binding and links photographed
+cards to public product detail pages. Home still uses a labeled visual design
+fixture. Private local R2 image delivery is configured. A protected admin
+foundation is present, but real Cloudflare Access
 configuration and deployment are not configured yet.
 
 ## Requirements
@@ -49,7 +49,7 @@ completely fictional products for local development only, run
 `npm run db:seed:local`. The Shop shows 22 public seed products (20 Available,
 2 Sold); Draft and Hidden records stay private. Public seed products have image
 metadata with `dev/products/...` placeholder keys; no R2 objects or
-deliverable photos exist yet, so Shop cards show square photo placeholders.
+deliverable photos exist yet, so Shop cards show their image-failure fallbacks.
 The seed must never be treated as production inventory or applied to a remote
 database. Home's design-review fixture is separate and is never imported into
 D1 or used by Shop.
@@ -110,6 +110,42 @@ jewelry-catalog-images-local/products/1001/123e4567-e89b-12d3-a456-426614174000.
 The checked-in development seed contains placeholder image metadata without
 R2 objects. It is not production inventory. A real private production bucket,
 binding configuration, and image uploads are separate deployment work.
+
+For a browser check of Shop covers and the detail gallery, use a separate
+synthetic local product after applying the migrations and fictional seed. Run
+`node scripts/create-local-image-fixture.mjs`, then put two local-only objects:
+
+```sh
+npx wrangler r2 object put jewelry-catalog-images-local/products/9001/123e4567-e89b-12d3-a456-426614174001.png --file=.wrangler/fixtures/fictional-checker.png --content-type=image/png --local
+npx wrangler r2 object put jewelry-catalog-images-local/products/9001/123e4567-e89b-12d3-a456-426614174002.png --file=tests/fixtures/still-photo.png --content-type=image/png --local
+```
+
+Then create the matching local-only D1 rows (choose another unused product ID
+and adjust the keys if `9001` already exists):
+
+```sh
+cat > /tmp/jewelry-storefront-qa.sql <<'SQL'
+INSERT INTO products (id, name, slug, price_cents, category_id, status, created_at, updated_at)
+VALUES (9001, 'Synthetic Orbit Ring', 'synthetic-orbit-ring', 3199, 4, 'draft', 1791060000000, 1791060000000);
+INSERT INTO product_images (product_id, r2_key, alt_text, sort_order, width, height, created_at)
+VALUES (9001, 'products/9001/123e4567-e89b-12d3-a456-426614174001.png', 'Checker front view', 0, 64, 64, 1791060000000);
+INSERT INTO product_images (product_id, r2_key, alt_text, sort_order, width, height, created_at)
+VALUES (9001, 'products/9001/123e4567-e89b-12d3-a456-426614174002.png', 'Purple side view', 1, 64, 64, 1791060000000);
+UPDATE products SET status = 'available' WHERE id = 9001;
+SQL
+npx wrangler d1 execute DB --file=/tmp/jewelry-storefront-qa.sql --local
+npm run dev
+```
+
+Open `/shop` and `/products/synthetic-orbit-ring`.
+The owner-approved Issue #17 public display keeps SKU internal to admin; Shop
+and product detail do not load or show it to customers.
+The checker should be the cover; reordering the two saved positions should
+change the public cover and primary gallery image on a fresh read. This fixture
+is local-only and must never be used as production inventory. The existing
+fictional seed's missing objects should be used to check image fallbacks, not
+successful delivery. Physical iPhone Safari and deployed protected-preview
+checks remain separate launch gates.
 
 Never commit `.env`, `.dev.vars`, Cloudflare tokens, account identifiers, or
 production data. Browser-visible values must be treated as public. Server-only

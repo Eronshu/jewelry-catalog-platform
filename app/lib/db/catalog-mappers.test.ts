@@ -52,24 +52,17 @@ describe("catalog row mapping", () => {
       slug: "pearl-drop-earrings",
       price_cents: 2599,
       status: "available",
-      category_id: 1,
-      material: "silver",
-      colour: null,
       created_at: 1780000000000,
       cover_id: 11,
-      cover_r2_key: "products/7/front.jpg",
       cover_alt_text: "Front view",
       cover_sort_order: 0,
       cover_width: 1200,
       cover_height: 1200,
-      cover_created_at: 1780000000000,
     };
 
     expect(mapPublicProductCard(cardRow).coverImage).toMatchObject({
       id: 11,
-      productId: 7,
       sortOrder: 0,
-      r2Key: "products/7/front.jpg",
     });
     expect(
       mapPublicProductCard({ ...cardRow, cover_id: null }).coverImage,

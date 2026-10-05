@@ -1,12 +1,11 @@
 import {
-  mapProduct,
-  mapProductImage,
+  mapPublicProductDetail,
   mapPublicProductCard,
-  type ProductImageRow,
-  type ProductRow,
+  type PublicProductDetailRow,
+  type PublicProductImageRow,
   type PublicProductCardRow,
 } from "./catalog-mappers";
-import type { PublicProductCard, ProductWithImages } from "./catalog-types";
+import type { PublicProductCard, PublicProductDetail } from "./catalog-types";
 
 export interface PublicProductCursor {
   createdAt: number;
@@ -80,17 +79,15 @@ export async function listPublicProducts(
 
   const result = await db
     .prepare(
-      `SELECT p.id, p.name, p.slug, p.price_cents, p.status,
-              p.category_id, p.material, p.colour, p.created_at,
-              i.id AS cover_id, i.r2_key AS cover_r2_key,
+      `SELECT p.id, p.name, p.slug, p.price_cents, p.status, p.created_at,
+              i.id AS cover_id,
               i.alt_text AS cover_alt_text, i.sort_order AS cover_sort_order,
-              i.width AS cover_width, i.height AS cover_height,
-              i.created_at AS cover_created_at
+              i.width AS cover_width, i.height AS cover_height
        FROM products p
        LEFT JOIN product_images i ON i.id = (
          SELECT image.id FROM product_images image
          WHERE image.product_id = p.id
-         ORDER BY image.sort_order ASC
+         ORDER BY image.sort_order ASC, image.id ASC
          LIMIT 1
        )
        WHERE ${conditions.join(" AND ")}
@@ -106,33 +103,28 @@ export async function listPublicProducts(
 export async function getPublicProductBySlug(
   db: D1Database,
   slug: string,
-): Promise<ProductWithImages | null> {
+): Promise<PublicProductDetail | null> {
   const row = await db
     .prepare(
-      `SELECT id, name, slug, sku, description, price_cents, category_id,
-              material, colour, status, quantity, facebook_url, created_at,
-              updated_at, published_at, sort_order
+      `SELECT id, name, slug, description, price_cents,
+              material, colour, status, facebook_url
        FROM products
        WHERE slug = ? AND status IN ('available', 'sold')`,
     )
     .bind(slug)
-    .first<ProductRow>();
+    .first<PublicProductDetailRow>();
 
   if (row === null) return null;
 
   const images = await db
     .prepare(
-      `SELECT id, product_id, r2_key, alt_text, sort_order, width, height,
-              created_at
+      `SELECT id, alt_text, sort_order, width, height
        FROM product_images
        WHERE product_id = ?
-       ORDER BY sort_order ASC`,
+       ORDER BY sort_order ASC, id ASC`,
     )
     .bind(row.id)
-    .all<ProductImageRow>();
+    .all<PublicProductImageRow>();
 
-  return {
-    product: mapProduct(row),
-    images: images.results.map(mapProductImage),
-  };
+  return mapPublicProductDetail(row, images.results);
 }

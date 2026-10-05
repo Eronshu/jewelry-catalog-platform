@@ -8,6 +8,7 @@ import {
 } from "../components/storefront/shop-product-grid";
 import { reviewImages } from "../lib/design-review-images";
 import { listPublicProducts } from "../lib/db/products.server";
+import { productImageUrl } from "../lib/images/image-urls";
 
 const shopCatalogUnavailable = "Shop catalog unavailable";
 
@@ -25,11 +26,17 @@ export async function loader({ context }: Route.LoaderArgs) {
   }
 
   const cards: ShopCard[] = products.map(
-    ({ slug, name, priceCents, status }) => ({
+    ({ id, slug, name, priceCents, status, coverImage }) => ({
       slug,
       name,
       priceCents,
       status,
+      cover: coverImage
+        ? {
+            url: productImageUrl(id, coverImage.id, "card"),
+            altText: coverImage.altText,
+          }
+        : null,
     }),
   );
   return { products: cards };
