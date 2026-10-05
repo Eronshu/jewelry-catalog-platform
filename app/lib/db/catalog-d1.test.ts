@@ -279,8 +279,19 @@ describe("the migrated local D1 schema", () => {
       .bind(product!.id)
       .run();
 
+    const imageIds = await db
+      .prepare("SELECT id, r2_key FROM product_images WHERE product_id = ?")
+      .bind(product!.id)
+      .all<{ id: number; r2_key: string }>();
+    const firstId = imageIds.results.find(
+      (row) => row.r2_key === "tests/first.jpg",
+    )!.id;
+    const secondId = imageIds.results.find(
+      (row) => row.r2_key === "tests/second.jpg",
+    )!.id;
     const [card] = await listPublicProducts(db);
-    expect(card.coverImage?.r2Key).toBe("tests/first.jpg");
+    expect(card.coverImage?.id).toBe(firstId);
+    expect(JSON.stringify(card)).not.toContain("r2Key");
     const detail = await getPublicProductBySlug(db, "ordered-images");
     expect(detail?.images.map(({ sortOrder }) => sortOrder)).toEqual([0, 2]);
 
@@ -298,9 +309,12 @@ describe("the migrated local D1 schema", () => {
         "UPDATE product_images SET sort_order = 1 WHERE r2_key = 'tests/first.jpg'",
       ),
     ]);
-    expect((await listPublicProducts(db))[0].coverImage?.r2Key).toBe(
-      "tests/second.jpg",
-    );
+    expect((await listPublicProducts(db))[0].coverImage?.id).toBe(secondId);
+    expect(
+      (await getPublicProductBySlug(db, "ordered-images"))?.images.map(
+        (image) => image.id,
+      ),
+    ).toEqual([secondId, firstId]);
   });
 });
 
@@ -585,6 +599,49 @@ describe("the public image invariant", () => {
 });
 
 describe("public catalog reads", () => {
+  it("bounds the initial Shop batch to 24 products", async () => {
+    for (let index = 0; index < 25; index++) {
+      await insertProduct(`bounded-${index}`, "available", 1000 + index);
+    }
+    const products = await listPublicProducts(db);
+    expect(products).toHaveLength(24);
+    expect(products[0].slug).toBe("bounded-24");
+    expect(products.at(-1)?.slug).toBe("bounded-1");
+  });
+
+  it("reads changed price and status on a fresh public request", async () => {
+    const product = await insertProduct("fresh-item", "available", 1000);
+    expect(
+      (await getPublicProductBySlug(db, "fresh-item"))?.product.priceCents,
+    ).toBe(2599);
+    await db
+      .prepare(
+        "UPDATE products SET price_cents = 3199, status = 'sold' WHERE id = ?",
+      )
+      .bind(product!.id)
+      .run();
+    expect(
+      (await getPublicProductBySlug(db, "fresh-item"))?.product,
+    ).toMatchObject({ priceCents: 3199, status: "sold" });
+    await db
+      .prepare("UPDATE products SET status = 'hidden' WHERE id = ?")
+      .bind(product!.id)
+      .run();
+    expect(await getPublicProductBySlug(db, "fresh-item")).toBeNull();
+    expect(await listPublicProducts(db)).toEqual([]);
+  });
+
+  it("does not return internal SKU in a public detail read", async () => {
+    const product = await insertProduct("public-no-sku", "available", 1000);
+    await db
+      .prepare("UPDATE products SET sku = 'PRIVATE-QA-SKU' WHERE id = ?")
+      .bind(product!.id)
+      .run();
+    const detail = await getPublicProductBySlug(db, "public-no-sku");
+    expect(JSON.stringify(detail)).not.toContain("PRIVATE-QA-SKU");
+    expect(detail?.product).not.toHaveProperty("sku");
+  });
+
   it("authorizes an image only for its public parent product", async () => {
     const available = await insertProduct("visible-image", "available", 1000);
     const hidden = await insertProduct("hidden-image", "hidden", 1001);

@@ -45,14 +45,29 @@ export interface PublicProductCard {
   slug: string;
   priceCents: number;
   status: "available" | "sold";
-  categoryId: number;
-  material: string | null;
-  colour: string | null;
   createdAt: number;
-  coverImage: ProductImage | null;
+  coverImage: PublicProductImage | null;
 }
 
-export interface ProductWithImages {
-  product: Product;
-  images: ProductImage[];
+export interface PublicProductImage {
+  id: number;
+  altText: string | null;
+  sortOrder: number;
+  width: number | null;
+  height: number | null;
+}
+
+export interface PublicProductDetail {
+  product: Pick<
+    Product,
+    | "id"
+    | "name"
+    | "slug"
+    | "description"
+    | "priceCents"
+    | "material"
+    | "colour"
+    | "facebookUrl"
+  > & { status: "available" | "sold" };
+  images: PublicProductImage[];
 }
