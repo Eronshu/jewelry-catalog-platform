@@ -6,6 +6,7 @@ import {
   publicCursorAnchorMatches,
 } from "./db/products.server";
 import { productImageUrl } from "./images/image-urls";
+import type { PublicProductCard } from "./db/catalog-types";
 import { parseShopQuery, shopUrl, type ShopFilters } from "./shop-query";
 
 export interface ShopPageCard {
@@ -14,6 +15,21 @@ export interface ShopPageCard {
   priceCents: number;
   status: "available" | "sold";
   cover: { url: string; altText: string | null } | null;
+}
+
+export function toShopPageCard(product: PublicProductCard): ShopPageCard {
+  return {
+    slug: product.slug,
+    name: product.name,
+    priceCents: product.priceCents,
+    status: product.status,
+    cover: product.coverImage
+      ? {
+          url: productImageUrl(product.id, product.coverImage.id, "card"),
+          altText: product.coverImage.altText,
+        }
+      : null,
+  };
 }
 
 export interface ShopPage {
@@ -137,18 +153,7 @@ export async function shopData(
     pageCursor = decoded;
   }
   const result = await listPublicProductPage(db, { ...options, pageCursor });
-  const products: ShopPageCard[] = result.products.map((product) => ({
-    slug: product.slug,
-    name: product.name,
-    priceCents: product.priceCents,
-    status: product.status,
-    cover: product.coverImage
-      ? {
-          url: productImageUrl(product.id, product.coverImage.id, "card"),
-          altText: product.coverImage.altText,
-        }
-      : null,
-  }));
+  const products: ShopPageCard[] = result.products.map(toShopPageCard);
   const last = result.products.at(-1);
   const nextCursor =
     result.hasMore && last

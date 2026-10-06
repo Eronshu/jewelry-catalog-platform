@@ -41,6 +41,16 @@ function NewProductWithFrameworkProps() {
     />
   );
 }
+function HomeWithFrameworkProps() {
+  return (
+    <Home.default
+      {...({ loaderData: useLoaderData() } as Parameters<
+        typeof Home.default
+      >[0])}
+    />
+  );
+}
+const homeRouteModule = { ...Home, default: HomeWithFrameworkProps };
 const newProductRouteModule = {
   ...AdminProductNew,
   default: NewProductWithFrameworkProps,
@@ -55,7 +65,7 @@ const routeEntries = {
         id: "routes/home",
         parentId: "root",
         index: true,
-        module: Home,
+        module: homeRouteModule,
         children: [],
       },
       {
@@ -99,7 +109,7 @@ const routeEntries = {
     id: "routes/home",
     parentId: "root",
     index: true,
-    module: Home,
+    module: homeRouteModule,
   },
   "routes/admin": {
     id: "routes/admin",
@@ -161,7 +171,8 @@ const build = {
     routes: {
       root: assetRoute("root", "/root.js"),
       "routes/home": {
-        ...assetRoute("routes/home", "/home.js"),
+        ...assetRoute("routes/home", "/home.js", true),
+        hasErrorBoundary: true,
         parentId: "root",
         index: true,
       },
@@ -578,9 +589,19 @@ describe("Worker to React Router admin boundary", () => {
   });
 
   it("keeps public Home accessible and preserves the public image cache exception", async () => {
-    const home = await request("/");
+    const emptyDb = {
+      prepare: () => ({
+        bind() {
+          return this;
+        },
+        all: async () => ({ results: [] }),
+      }),
+    } as unknown as D1Database;
+    const home = await request("/", undefined, { ...env, DB: emptyDb });
+    const homeHtml = await home.text();
     expect(home.status).toBe(200);
-    expect(await home.text()).toContain("site-shell");
+    expect(homeHtml).toContain("site-shell");
+    expect(homeHtml).toContain("No pieces to feature right now");
 
     const image = await handleWorkerRequest(
       new Request("https://example.invalid/media/products/1/2/card"),
