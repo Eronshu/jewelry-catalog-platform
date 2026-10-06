@@ -1,14 +1,24 @@
-import { Link } from "react-router";
+import { isRouteErrorResponse, Link } from "react-router";
 
-import { DesignReviewProductGrid } from "../components/storefront/design-review-product-grid";
+import type { Route } from "./+types/home";
+import { cloudflareContext } from "../cloudflare-context";
+import { ShopProductGrid } from "../components/storefront/shop-product-grid";
 import { reviewImages } from "../lib/design-review-images";
-import { shopDesignReviewCards } from "../lib/shop-design-review-fixture";
+import { homeData } from "../lib/home-data.server";
 
-const featuredReviewCards = [
-  shopDesignReviewCards[0],
-  ...shopDesignReviewCards.slice(2, 9),
-];
-const afterDarkImage = shopDesignReviewCards[12].image;
+const homeCatalogUnavailable = "Home catalog unavailable";
+
+export async function loader({ context }: Route.LoaderArgs) {
+  try {
+    return await homeData(context.get(cloudflareContext).env.DB);
+  } catch (error) {
+    console.error("Home catalog load failed", error);
+    throw new Response(null, {
+      status: 503,
+      statusText: homeCatalogUnavailable,
+    });
+  }
+}
 
 export function meta() {
   return [
@@ -20,7 +30,7 @@ export function meta() {
   ];
 }
 
-export default function Home() {
+export default function Home({ loaderData }: Route.ComponentProps) {
   return (
     <>
       <section aria-labelledby="home-title" className="home-stage">
@@ -40,6 +50,9 @@ export default function Home() {
           <Link className="button-link button-link--light" to="/shop">
             Shop jewelry <span aria-hidden="true">↗</span>
           </Link>
+          <p className="home-stage-note">
+            Temporary editorial photo for visual direction.
+          </p>
         </div>
       </section>
 
@@ -49,19 +62,33 @@ export default function Home() {
       >
         <div className="home-section-heading">
           <div>
-            <h2 id="featured-title">Featured preview</h2>
-            <p>Design-review only · not for sale</p>
+            <h2 id="featured-title">Recently added</h2>
+            <p>Prices in CAD</p>
           </div>
           <Link className="text-link" to="/shop">
             View Shop <span aria-hidden="true">↗</span>
           </Link>
         </div>
-        <DesignReviewProductGrid cards={featuredReviewCards} featured />
+        {loaderData.products.length ? (
+          <div className="home-product-grid">
+            <ShopProductGrid products={loaderData.products} />
+          </div>
+        ) : (
+          <div className="home-empty">
+            <p>No pieces to feature right now. Explore the Shop for updates.</p>
+            <Link className="text-link" to="/shop">
+              Browse Shop
+            </Link>
+          </div>
+        )}
       </section>
 
-      <section aria-labelledby="browse-title" className="container home-browse">
+      <section aria-labelledby="style-title" className="container home-browse">
         <div className="home-section-heading">
-          <h2 id="browse-title">Shop by mood</h2>
+          <div>
+            <h2 id="style-title">Style inspiration</h2>
+            <p>Temporary editorial imagery · shown for visual direction</p>
+          </div>
           <Link className="text-link" to="/shop">
             Shop all <span aria-hidden="true">↗</span>
           </Link>
@@ -69,13 +96,13 @@ export default function Home() {
         <div className="home-browse-grid">
           <figure className="home-browse-tile home-browse-tile--feature">
             <img
-              alt={afterDarkImage.alt}
+              alt={reviewImages.body.alt}
               className="cover-image"
               height="1200"
               loading="lazy"
               sizes="(min-width: 48rem) 55vw, 100vw"
-              src={afterDarkImage.src}
-              srcSet={afterDarkImage.srcSet}
+              src={reviewImages.body.src}
+              srcSet={reviewImages.body.srcSet}
               width="1200"
             />
             <figcaption>After dark</figcaption>
@@ -118,5 +145,25 @@ export default function Home() {
         </div>
       </section>
     </>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  const unavailable =
+    (isRouteErrorResponse(error) || error instanceof Response) &&
+    error.status === 503 &&
+    error.statusText === homeCatalogUnavailable;
+  return (
+    <div className="container error-content">
+      <h1 className="page-title">
+        {unavailable
+          ? "We couldn’t load the collection"
+          : "Something went wrong"}
+      </h1>
+      <p className="lead">Please try again in a moment.</p>
+      <Link className="button-link" to="/shop">
+        Browse Shop
+      </Link>
+    </div>
   );
 }

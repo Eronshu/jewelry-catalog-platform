@@ -7,6 +7,7 @@ import { getPlatformProxy, type PlatformProxy } from "wrangler";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { listActiveCategories } from "./categories.server";
+import { homeData } from "../home-data.server";
 import { shopData } from "../shop-data.server";
 import {
   getPublicImageSource,
@@ -602,6 +603,41 @@ describe("the public image invariant", () => {
 });
 
 describe("public catalog reads", () => {
+  it("selects four newest public Home cards with deterministic ties and safe fields", async () => {
+    for (const [slug, status, createdAt] of [
+      ["draft-home", "draft", 2000],
+      ["hidden-home", "hidden", 2001],
+      ["archived-home", "archived", 2002],
+      ["first-home", "available", 1000],
+      ["second-home", "sold", 1001],
+      ["third-home", "available", 1002],
+      ["fourth-home", "available", 1002],
+      ["fifth-home", "sold", 1002],
+    ] as const) {
+      await insertProduct(slug, status, createdAt);
+    }
+
+    const data = await homeData(db);
+    expect(Object.keys(data)).toEqual(["products"]);
+    expect(data.products.map(({ slug }) => slug)).toEqual([
+      "fifth-home",
+      "fourth-home",
+      "third-home",
+      "second-home",
+    ]);
+    expect(data.products[0]).toMatchObject({
+      name: "fifth-home",
+      priceCents: 2599,
+      status: "sold",
+      cover: {
+        url: expect.stringMatching(/^\/media\/products\/\d+\/\d+\/card$/),
+      },
+    });
+    expect(JSON.stringify(data)).not.toMatch(
+      /sku|r2_key|r2Key|\/admin\/|tests\/|draft-home|hidden-home|archived-home/,
+    );
+  });
+
   it("returns a reset signal for a cursor whose anchor becomes hidden", async () => {
     for (let index = 0; index < 25; index++)
       await insertProduct(`cursor-${index}`, "available", 1000 + index);
