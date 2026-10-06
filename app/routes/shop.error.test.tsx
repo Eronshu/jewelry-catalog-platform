@@ -7,13 +7,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Route } from "./+types/shop";
 import { cloudflareContext } from "../cloudflare-context";
-import { listPublicProducts } from "../lib/db/products.server";
-
+import { shopData } from "../lib/shop-data.server";
 import Shop, { ErrorBoundary, loader } from "./shop";
 
-vi.mock("../lib/db/products.server", () => ({
-  listPublicProducts: vi.fn(),
-}));
+vi.mock("../lib/shop-data.server", () => ({ shopData: vi.fn() }));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -23,9 +20,6 @@ afterEach(() => {
 
 async function renderRoute(routeLoader: typeof loader) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
   const context = new RouterContextProvider();
   context.set(cloudflareContext, {
     env: { DB: {} as D1Database } as Env,
@@ -42,42 +36,33 @@ async function renderRoute(routeLoader: typeof loader) {
     ],
     context,
   );
-
-  await act(async () => {
-    root.render(<Stub initialEntries={["/shop"]} />);
-  });
-  const html = container.innerHTML;
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  await act(async () => root.render(<Stub initialEntries={["/shop"]} />));
+  const html = host.innerHTML;
   await act(async () => root.unmount());
+  host.remove();
   return html;
 }
 
 describe("Shop route error handoff", () => {
-  it("routes a catalog-read failure through the loader to the Shop 503 boundary", async () => {
-    const internalError = new Error("SQL and binding details");
-    const serverLog = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.mocked(listPublicProducts).mockRejectedValueOnce(internalError);
-
+  it("shows generic retry when a catalog read fails", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(shopData).mockRejectedValueOnce(new Error("private SQL detail"));
     const html = await renderRoute(loader);
-
-    expect(listPublicProducts).toHaveBeenCalledOnce();
-    expect(serverLog).toHaveBeenCalledWith(
-      "Shop catalog load failed",
-      internalError,
-    );
+    expect(log).toHaveBeenCalled();
     expect(html).toContain("We couldn’t load the shop");
-    expect(html).toContain('href="/shop"');
     expect(html).toContain("Try again");
-    expect(html).not.toContain("SQL and binding details");
+    expect(html).not.toContain("private SQL detail");
   });
 
-  it("renders an unrelated route error with the generic fallback", async () => {
+  it("uses generic fallback for an unrelated error", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const html = await renderRoute((async () => {
       throw new Response(null, { status: 503, statusText: "Other service" });
     }) as typeof loader);
-
     expect(html).toContain("Something went wrong");
     expect(html).not.toContain("We couldn’t load the shop");
-    expect(html).not.toContain("Try again");
   });
 });

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import Shop from "./shop";
 import ProductDetail from "./product-detail";
+import { parseShopQuery } from "../lib/shop-query";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -25,7 +26,7 @@ describe("public navigation freshness", () => {
       get: () => false,
     });
     let priceCents = 2500;
-    let status: "available" | "sold" = "available";
+    let status: "available" | "sold" | "hidden" = "available";
     let imageId = 10;
     let shopReads = 0;
     let detailReads = 0;
@@ -36,18 +37,32 @@ describe("public navigation freshness", () => {
         loader: () => {
           shopReads++;
           return {
-            products: [
-              {
-                slug: "orbit-ring",
-                name: "Orbit Ring",
-                priceCents,
-                status,
-                cover: {
-                  url: `/media/products/1/${imageId}/card`,
-                  altText: null,
-                },
-              },
-            ],
+            revision: crypto.randomUUID(),
+            page: {
+              products:
+                status === "hidden"
+                  ? []
+                  : [
+                      {
+                        slug: "orbit-ring",
+                        name: "Orbit Ring",
+                        priceCents,
+                        status,
+                        cover: {
+                          url: `/media/products/1/${imageId}/card`,
+                          altText: null,
+                        },
+                      },
+                    ],
+              hasMore: false,
+              nextCursor: null,
+            },
+            filters: parseShopQuery(new URL("https://example.com/shop"))
+              .filters,
+            query: parseShopQuery(new URL("https://example.com/shop")),
+            categories: [{ name: "Rings", slug: "rings" }],
+            facets: { materials: [], colours: [] },
+            emptyCatalog: status === "hidden",
           };
         },
       },
@@ -122,6 +137,12 @@ describe("public navigation freshness", () => {
         host.querySelector('img[src="/media/products/1/11/detail"]'),
       ).not.toBeNull();
       expect(host.textContent).not.toContain("View on Facebook Marketplace");
+      status = "hidden";
+      await act(async () =>
+        (host.querySelector('a[href="/shop"]') as HTMLAnchorElement).click(),
+      );
+      expect(shopReads).toBe(3);
+      expect(host.querySelector('a[href="/products/orbit-ring"]')).toBeNull();
     } finally {
       await act(async () => root.unmount());
       host.remove();
