@@ -7,10 +7,13 @@ import { getPlatformProxy, type PlatformProxy } from "wrangler";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { listActiveCategories } from "./categories.server";
+import { shopData } from "../shop-data.server";
 import {
   getPublicImageSource,
   getPublicProductBySlug,
   listPublicProducts,
+  listPublicProductPage,
+  listPublicFacets,
 } from "./products.server";
 
 const root = resolve(process.cwd());
@@ -599,6 +602,116 @@ describe("the public image invariant", () => {
 });
 
 describe("public catalog reads", () => {
+  it("returns a reset signal for a cursor whose anchor becomes hidden", async () => {
+    for (let index = 0; index < 25; index++)
+      await insertProduct(`cursor-${index}`, "available", 1000 + index);
+    const first = await shopData(db, new URL("https://example.com/shop"));
+    if (!("page" in first)) throw new Error("Expected first page");
+    expect(first.page.products).toHaveLength(24);
+    expect(first.page.nextCursor).toBeTruthy();
+    const nextUrl = new URL(
+      `https://example.com/shop?after=${first.page.nextCursor}`,
+    );
+    const next = await shopData(db, nextUrl, true);
+    expect("page" in next && next.page.products).toHaveLength(1);
+    const anchorSlug = first.page.products.at(-1)!.slug;
+    await db
+      .prepare("UPDATE products SET status = 'hidden' WHERE slug = ?")
+      .bind(anchorSlug)
+      .run();
+    expect(await shopData(db, nextUrl, true)).toEqual({
+      resetUrl: "/shop",
+      stale: true,
+    });
+  });
+  it("searches names literally, combines filters, and excludes private facets", async () => {
+    const matches = await insertProduct(
+      "silver-literal-ring",
+      "available",
+      1000,
+    );
+    await db
+      .prepare(
+        "UPDATE products SET name = 'Silver 50% _ Ring', sku = 'SECRET-ONLY' WHERE id = ?",
+      )
+      .bind(matches!.id)
+      .run();
+    const privateProduct = await insertProduct(
+      "private-secret",
+      "hidden",
+      1001,
+    );
+    await db
+      .prepare(
+        "UPDATE products SET name = 'Secret', material = 'private metal', colour = 'private red' WHERE id = ?",
+      )
+      .bind(privateProduct!.id)
+      .run();
+    const found = await listPublicProductPage(db, {
+      q: "50% _",
+      categoryId: 1,
+      material: "SILVER",
+      colour: "BLACK",
+      availability: "available",
+    });
+    expect(found.products.map((item) => item.id)).toEqual([matches!.id]);
+    expect(
+      (await listPublicProductPage(db, { q: "SECRET-ONLY" })).products,
+    ).toEqual([]);
+    expect((await listPublicProductPage(db, { q: "%" })).products).toHaveLength(
+      1,
+    );
+    expect((await listPublicProductPage(db, { q: "_" })).products).toHaveLength(
+      1,
+    );
+    const facets = await listPublicFacets(db);
+    expect(facets).toEqual({ materials: ["silver"], colours: ["black"] });
+  });
+
+  it("uses stable price ties and 24-card boundaries", async () => {
+    for (let index = 0; index < 49; index++) {
+      const row = await insertProduct(
+        `price-${index}`,
+        "available",
+        1000 + index,
+      );
+      await db
+        .prepare("UPDATE products SET price_cents = ? WHERE id = ?")
+        .bind(index < 3 ? 100 : 200 + index, row!.id)
+        .run();
+    }
+    const first = await listPublicProductPage(db, { sort: "price-asc" });
+    expect(first.products).toHaveLength(24);
+    expect(first.hasMore).toBe(true);
+    expect(first.products.slice(0, 3).map((item) => item.slug)).toEqual([
+      "price-2",
+      "price-1",
+      "price-0",
+    ]);
+    const anchor = first.products.at(-1)!;
+    const second = await listPublicProductPage(db, {
+      sort: "price-asc",
+      pageCursor: { key: anchor.priceCents, id: anchor.id },
+    });
+    expect(second.products).toHaveLength(24);
+    expect(second.hasMore).toBe(true);
+    const anchor2 = second.products.at(-1)!;
+    const third = await listPublicProductPage(db, {
+      sort: "price-asc",
+      pageCursor: { key: anchor2.priceCents, id: anchor2.id },
+    });
+    expect(third.products).toHaveLength(1);
+    expect(third.hasMore).toBe(false);
+    expect(
+      new Set(
+        [...first.products, ...second.products, ...third.products].map(
+          (item) => item.id,
+        ),
+      ).size,
+    ).toBe(49);
+    const descending = await listPublicProductPage(db, { sort: "price-desc" });
+    expect(descending.products[0].slug).toBe("price-48");
+  });
   it("bounds the initial Shop batch to 24 products", async () => {
     for (let index = 0; index < 25; index++) {
       await insertProduct(`bounded-${index}`, "available", 1000 + index);

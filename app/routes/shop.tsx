@@ -1,54 +1,77 @@
-import { isRouteErrorResponse, Link } from "react-router";
+import { isRouteErrorResponse, Link, redirect } from "react-router";
 
 import type { Route } from "./+types/shop";
 import { cloudflareContext } from "../cloudflare-context";
-import {
-  ShopProductGrid,
-  type ShopCard,
-} from "../components/storefront/shop-product-grid";
+import { ShopDiscovery } from "../components/storefront/shop-discovery";
 import { reviewImages } from "../lib/design-review-images";
-import { listPublicProducts } from "../lib/db/products.server";
-import { productImageUrl } from "../lib/images/image-urls";
+import { shopData } from "../lib/shop-data.server";
 
 const shopCatalogUnavailable = "Shop catalog unavailable";
+const suppliedBatchUrls = new WeakMap<Window, Set<string>>();
 
-export async function loader({ context }: Route.LoaderArgs) {
+export function markSuppliedBatch(url: string) {
+  if (typeof window === "undefined") return () => {};
+  let urls = suppliedBatchUrls.get(window);
+  if (!urls) {
+    urls = new Set();
+    suppliedBatchUrls.set(window, urls);
+  }
+  const next = new URL(url, window.location.origin);
+  const key = next.pathname + next.search;
+  urls.add(key);
+  return () => urls.delete(key);
+}
+
+export async function loader({ context, request }: Route.LoaderArgs) {
   const db = context.get(cloudflareContext).env.DB;
-  let products: Awaited<ReturnType<typeof listPublicProducts>>;
+  let result;
   try {
-    products = await listPublicProducts(db);
+    result = await shopData(db, new URL(request.url));
   } catch (error) {
+    if (error instanceof Response) throw error;
     console.error("Shop catalog load failed", error);
     throw new Response(null, {
       status: 503,
       statusText: shopCatalogUnavailable,
     });
   }
+  if ("resetUrl" in result) {
+    if (result.stale)
+      return { stalePagination: true as const, startUrl: result.resetUrl };
+    return redirect(result.resetUrl);
+  }
+  return { ...result, revision: crypto.randomUUID() };
+}
 
-  const cards: ShopCard[] = products.map(
-    ({ id, slug, name, priceCents, status, coverImage }) => ({
-      slug,
-      name,
-      priceCents,
-      status,
-      cover: coverImage
-        ? {
-            url: productImageUrl(id, coverImage.id, "card"),
-            altText: coverImage.altText,
-          }
-        : null,
-    }),
-  );
-  return { products: cards };
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  defaultShouldRevalidate,
+}: {
+  currentUrl: URL;
+  nextUrl: URL;
+  defaultShouldRevalidate: boolean;
+}) {
+  if (
+    typeof window === "undefined" ||
+    currentUrl.pathname !== "/shop" ||
+    nextUrl.pathname !== "/shop"
+  )
+    return defaultShouldRevalidate;
+  const urls = suppliedBatchUrls.get(window);
+  if (!urls?.has(nextUrl.pathname + nextUrl.search))
+    return defaultShouldRevalidate;
+  const current = new URL(currentUrl);
+  const next = new URL(nextUrl);
+  current.searchParams.delete("batches");
+  next.searchParams.delete("batches");
+  return current.href === next.href ? false : defaultShouldRevalidate;
 }
 
 export function meta() {
   return [
     { title: "Shop | Jewelry Catalog" },
-    {
-      name: "description",
-      content: "Browse the jewelry collection.",
-    },
+    { name: "description", content: "Browse the jewelry collection." },
   ];
 }
 
@@ -84,7 +107,6 @@ export default function Shop({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
       </section>
-
       <section
         aria-labelledby="catalog-preview-title"
         className="container shop-catalog"
@@ -95,13 +117,21 @@ export default function Shop({ loaderData }: Route.ComponentProps) {
             <p>Prices in CAD</p>
           </div>
         </div>
-        {loaderData.products.length === 0 ? (
-          <div className="shop-empty">
-            <h3>No pieces available right now</h3>
-            <p>Check back soon for new additions.</p>
+        {loaderData.stalePagination === true ? (
+          <div className="shop-page-message" role="status">
+            <h3>The collection changed</h3>
+            <p>
+              These results have changed since you opened the next page. Start
+              again to see the current collection.
+            </p>
+            <Link to={loaderData.startUrl}>Start again</Link>
           </div>
         ) : (
-          <ShopProductGrid products={loaderData.products} />
+          <ShopDiscovery
+            key={loaderData.revision}
+            data={loaderData}
+            onBatchSupplied={markSuppliedBatch}
+          />
         )}
       </section>
     </>
@@ -121,7 +151,6 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
       </div>
     );
   }
-
   return (
     <div className="container error-content">
       <h1 className="page-title">We couldn’t load the shop</h1>
