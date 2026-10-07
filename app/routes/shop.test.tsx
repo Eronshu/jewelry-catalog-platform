@@ -160,7 +160,12 @@ describe("shop route", () => {
     expect(html).toContain("Sort by");
     expect(html).toContain("Price: low to high");
     expect(html).toContain("Price: high to low");
-    expect(html).toContain("Showing: All pieces");
+    expect(html).not.toContain("Showing: All pieces");
+    expect(html).not.toContain("pieces shown");
+    expect(html).toContain(
+      '<noscript><button type="submit" class="shop-apply-button">Show sorted results</button></noscript>',
+    );
+    expect(html).not.toContain(">Apply</button>");
     expect(html).toContain("Search by name");
     expect(html).not.toMatch(/sku|r2_key|admin\/products/i);
     expect(meta()).toContainEqual({ title: "Shop | Jewelry Catalog" });
