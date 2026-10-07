@@ -6,7 +6,11 @@ import { createRoutesStub, Link, useLocation, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ShopPage } from "../lib/shop-data.server";
-import { MAX_SHOP_BATCHES, parseShopQuery } from "../lib/shop-query";
+import {
+  MAX_SHOP_BATCHES,
+  parseShopQuery,
+  type ShopSort,
+} from "../lib/shop-query";
 import Shop, { shouldRevalidate } from "./shop";
 
 afterEach(() => {
@@ -96,7 +100,396 @@ function HistoryControls() {
   );
 }
 
+function rapidSortRoute(delayed: ShopSort[]) {
+  const releases = new Map<ShopSort, () => void>();
+  const signals = new Map<ShopSort, AbortSignal>();
+  const requests: string[] = [];
+  const routeData = (request: Request) => {
+    const query = parseShopQuery(new URL(request.url));
+    return {
+      revision: crypto.randomUUID(),
+      page: {
+        products: [card(query.filters.sort)],
+        hasMore: false,
+        nextCursor: null,
+      },
+      filters: query.filters,
+      query,
+      categories: [],
+      facets: { materials: [], colours: [] },
+      emptyCatalog: false,
+    };
+  };
+  const Stub = createRoutesStub([
+    {
+      path: "/shop",
+      Component: ({ loaderData }) => (
+        <>
+          <Shop
+            loaderData={loaderData as ReturnType<typeof routeData>}
+            params={{}}
+            matches={[] as never}
+          />
+          <LocationText />
+        </>
+      ),
+      loader: ({ request }) => {
+        const url = new URL(request.url);
+        requests.push(url.pathname + url.search);
+        const result = routeData(request);
+        signals.set(result.filters.sort, request.signal);
+        if (!delayed.includes(result.filters.sort)) return result;
+        return new Promise<typeof result>((resolve) => {
+          releases.set(result.filters.sort, () => resolve(result));
+        });
+      },
+      shouldRevalidate,
+    },
+  ]);
+  return { Stub, releases, requests, signals };
+}
+
+async function selectSort(host: HTMLElement, sort: ShopSort) {
+  await act(async () => {
+    const select = host.querySelector(
+      'select[name="sort"]',
+    ) as unknown as HTMLSelectElement;
+    select.value = sort;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+describe("Shop rapid sorting", () => {
+  it("supersedes delayed Price low to high when Newest is reselected", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const scroll = vi.fn();
+    vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(
+      scroll,
+    );
+    const { Stub, releases, requests, signals } = rapidSortRoute(["price-asc"]);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Stub initialEntries={["/shop"]} />));
+      await selectSort(host, "price-asc");
+      expect(releases.has("price-asc")).toBe(true);
+      await selectSort(host, "newest");
+      expect(requests.at(-1)).toBe("/shop");
+      expect(signals.get("price-asc")?.aborted).toBe(true);
+      await act(async () => releases.get("price-asc")!());
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        "/shop",
+      );
+      expect(
+        (
+          host.querySelector(
+            'select[name="sort"]',
+          ) as unknown as HTMLSelectElement
+        ).value,
+      ).toBe("newest");
+      expect(host.querySelector(".shop-product-grid")?.textContent).toContain(
+        "newest",
+      );
+      expect(
+        host.querySelector(".shop-product-grid")?.textContent,
+      ).not.toContain("price-asc");
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("keeps the later of two different rapid price sorts", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(
+      () => {},
+    );
+    const { Stub, releases, requests, signals } = rapidSortRoute(["price-asc"]);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Stub initialEntries={["/shop"]} />));
+      await selectSort(host, "price-asc");
+      await selectSort(host, "price-desc");
+      expect(requests.at(-1)).toBe("/shop?sort=price-desc");
+      expect(signals.get("price-asc")?.aborted).toBe(true);
+      await act(async () => releases.get("price-asc")!());
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        "/shop?sort=price-desc",
+      );
+      expect(
+        (
+          host.querySelector(
+            'select[name="sort"]',
+          ) as unknown as HTMLSelectElement
+        ).value,
+      ).toBe("price-desc");
+      expect(host.querySelector(".shop-product-grid")?.textContent).toContain(
+        "price-desc",
+      );
+      expect(
+        host.querySelector(".shop-product-grid")?.textContent,
+      ).not.toContain("price-asc");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("does not navigate when the selected sort is already settled", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const { Stub, requests } = rapidSortRoute([]);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Stub initialEntries={["/shop"]} />));
+      await selectSort(host, "newest");
+      expect(requests).toEqual(["/shop"]);
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        "/shop",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+});
+
 describe("Shop batch navigation", () => {
+  it("applies sort immediately, keeps applied choices, and ignores a late append", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const observer = observeShopEnd();
+    const scroll = vi.fn();
+    vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(
+      scroll,
+    );
+    let resolvePage!: (response: Response) => void;
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+        signal = init?.signal as AbortSignal;
+        return new Promise<Response>((resolve) => (resolvePage = resolve));
+      }),
+    );
+    const initial =
+      "/shop?q=Orbit&category=rings&material=silver&colour=black&availability=available";
+    const routeData = (request: Request) => {
+      const query = parseShopQuery(new URL(request.url));
+      return {
+        revision: crypto.randomUUID(),
+        page: {
+          products: [
+            card(query.filters.sort === "newest" ? "newest" : "cheapest"),
+          ],
+          hasMore: query.filters.sort === "newest",
+          nextCursor: query.filters.sort === "newest" ? "cursor-1" : null,
+        },
+        filters: query.filters,
+        query,
+        categories: [{ name: "Rings", slug: "rings" }],
+        facets: { materials: ["silver"], colours: ["black"] },
+        emptyCatalog: false,
+      };
+    };
+    const Stub = createRoutesStub([
+      {
+        path: "/shop",
+        Component: ({ loaderData }) => (
+          <>
+            <Shop
+              loaderData={loaderData as ReturnType<typeof routeData>}
+              params={{}}
+              matches={[] as never}
+            />
+            <HistoryControls />
+          </>
+        ),
+        loader: ({ request }) => routeData(request),
+        shouldRevalidate,
+      },
+    ]);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Stub initialEntries={[initial]} />));
+      expect(scroll).not.toHaveBeenCalled();
+      expect(host.textContent).not.toContain("Showing: All pieces");
+      expect(host.textContent).not.toContain("pieces shown");
+      await scrollTowardShopEnd();
+      await act(async () => observer.trigger());
+      expect(signal?.aborted).toBe(false);
+      (
+        host.querySelector(
+          'select[name="colour"]',
+        ) as unknown as HTMLSelectElement
+      ).value = "";
+      const select = host.querySelector(
+        'select[name="sort"]',
+      ) as unknown as HTMLSelectElement;
+      await act(async () => {
+        select.value = "price-asc";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(signal?.aborted).toBe(true);
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        `${initial}&sort=price-asc`,
+      );
+      expect(host.querySelector(".shop-product-grid")?.textContent).toContain(
+        "cheapest",
+      );
+      expect(
+        host.querySelector(".shop-product-grid")?.textContent,
+      ).not.toContain("newest");
+      expect(host.textContent).toContain("Sort: Price low to high");
+      await act(async () =>
+        resolvePage(
+          Response.json({
+            products: [card("obsolete")],
+            hasMore: false,
+            nextCursor: null,
+          }),
+        ),
+      );
+      expect(
+        host.querySelector(".shop-product-grid")?.textContent,
+      ).not.toContain("obsolete");
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        `${initial}&sort=price-asc`,
+      );
+      expect(host.querySelector(".shop-sort-form button")).toBeNull();
+      expect(host.textContent).toContain("Show results");
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(scroll).toHaveBeenCalled();
+      expect(document.activeElement).toBe(
+        host.querySelector('select[name="sort"]'),
+      );
+      const sortScrolls = scroll.mock.calls.length;
+      await act(async () =>
+        Array.from(host.querySelectorAll("button"))
+          .find((button) => button.textContent === "History back")!
+          .click(),
+      );
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        initial,
+      );
+      await act(async () =>
+        Array.from(host.querySelectorAll("button"))
+          .find((button) => button.textContent === "History forward")!
+          .click(),
+      );
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(scroll).toHaveBeenCalledTimes(sortScrolls);
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("cancels restoration before an old batch can change sorted results", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(
+      () => {},
+    );
+    let resolvePage!: (response: Response) => void;
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+        signal = init?.signal as AbortSignal;
+        return new Promise<Response>((resolve) => (resolvePage = resolve));
+      }),
+    );
+    const Stub = createRoutesStub([
+      {
+        path: "/shop",
+        Component: ({ loaderData }) => (
+          <>
+            <Shop
+              loaderData={loaderData as never}
+              params={{}}
+              matches={[] as never}
+            />
+            <LocationText />
+          </>
+        ),
+        loader: ({ request }) => {
+          const query = parseShopQuery(new URL(request.url));
+          return {
+            revision: crypto.randomUUID(),
+            page: {
+              products: [
+                card(
+                  query.filters.sort === "newest"
+                    ? "old-first"
+                    : "sorted-first",
+                ),
+              ],
+              hasMore: query.filters.sort === "newest",
+              nextCursor: query.filters.sort === "newest" ? "cursor-1" : null,
+            },
+            filters: query.filters,
+            query,
+            categories: [],
+            facets: { materials: [], colours: [] },
+            emptyCatalog: false,
+          };
+        },
+        shouldRevalidate,
+      },
+    ]);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await act(async () =>
+        root.render(<Stub initialEntries={["/shop?batches=2"]} />),
+      );
+      expect(signal?.aborted).toBe(false);
+      const select = host.querySelector(
+        'select[name="sort"]',
+      ) as unknown as HTMLSelectElement;
+      await act(async () => {
+        select.value = "price-desc";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(signal?.aborted).toBe(true);
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        "/shop?sort=price-desc",
+      );
+      await act(async () =>
+        resolvePage(
+          Response.json({
+            products: [card("late-old")],
+            hasMore: false,
+            nextCursor: null,
+          }),
+        ),
+      );
+      expect(host.querySelector(".shop-product-grid")?.textContent).toContain(
+        "sorted-first",
+      );
+      expect(
+        host.querySelector(".shop-product-grid")?.textContent,
+      ).not.toContain("late-old");
+      expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+        "/shop?sort=price-desc",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("arms observation when a scrollbar drag actually moves the page", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const observer = observeShopEnd();
@@ -284,6 +677,9 @@ describe("Shop batch navigation", () => {
         ),
       );
       expect(host.querySelectorAll(".shop-product-card")).toHaveLength(48);
+      expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe(
+        "24 more products loaded.",
+      );
       expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
         "/shop?batches=2",
       );
@@ -292,6 +688,10 @@ describe("Shop batch navigation", () => {
       await act(async () => observer.trigger());
       expect(read).toHaveBeenCalledTimes(2);
       expect(host.querySelectorAll(".shop-product-card")).toHaveLength(49);
+      expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe(
+        "1 more product loaded.",
+      );
+      expect(host.textContent).toContain("reached the end of these results");
       expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
         "/shop?batches=3",
       );
@@ -473,7 +873,7 @@ describe("Shop batch navigation", () => {
         ),
       );
       expect(host.querySelectorAll(".shop-product-card")).toHaveLength(2);
-      expect(host.textContent).toContain("2 pieces shown");
+      expect(host.textContent).not.toContain("pieces shown");
       expect(host.textContent).not.toContain("Restoring your results");
       expect(read).toHaveBeenCalledTimes(1);
     } finally {

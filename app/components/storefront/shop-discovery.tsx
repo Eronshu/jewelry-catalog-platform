@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import type { ShopPage } from "../../lib/shop-data.server";
@@ -6,6 +12,7 @@ import {
   MAX_SHOP_BATCHES,
   shopUrl,
   type ShopFilters,
+  type ShopSort,
 } from "../../lib/shop-query";
 import { ShopProductGrid } from "./shop-product-grid";
 
@@ -16,6 +23,9 @@ interface DiscoveryData {
   facets: { materials: string[]; colours: string[] };
   emptyCatalog: boolean;
 }
+
+// History entries retain state on Back/Forward; consume this only once.
+let pendingSortFocus: string | null = null;
 
 function uniqueCards(pages: ShopPage[]) {
   const slugs = new Set<string>();
@@ -50,14 +60,20 @@ export function ShopDiscovery({
   const autoArmed = autoArmKey === location.key;
   const pending = useRef(false);
   const appendController = useRef<AbortController | null>(null);
+  const restorationController = useRef<AbortController | null>(null);
   const sentinel = useRef<HTMLDivElement | null>(null);
+  const sortControl = useRef<HTMLSelectElement | null>(null);
+  const toolbar = useRef<HTMLDivElement | null>(null);
   const epoch = useRef(0);
   const restorationRun = useRef(0);
+  const requestedSort = useRef<ShopSort | null>(null);
+  const [appendAnnouncement, setAppendAnnouncement] = useState("");
 
   useEffect(
     () => () => {
       epoch.current++;
       appendController.current?.abort();
+      restorationController.current?.abort();
     },
     [],
   );
@@ -77,6 +93,46 @@ export function ShopDiscovery({
       }
     };
   }, [location.key]);
+
+  useLayoutEffect(() => {
+    const sortState = location.state as {
+      shopSortFocus?: string;
+      shopSortValue?: ShopSort;
+    } | null;
+    const token = sortState?.shopSortFocus;
+    if (
+      !token ||
+      token !== pendingSortFocus ||
+      sortState?.shopSortValue !== data.filters.sort
+    )
+      return;
+    pendingSortFocus = null;
+    toolbar.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    sortControl.current?.focus({ preventScroll: true });
+  }, [data.filters.sort, location.key, location.state]);
+
+  function invalidateBatchWork() {
+    epoch.current++;
+    restorationRun.current++;
+    appendController.current?.abort();
+    restorationController.current?.abort();
+  }
+
+  function changeSort(sort: ShopSort) {
+    if (
+      sort === requestedSort.current ||
+      (requestedSort.current === null && sort === data.filters.sort)
+    )
+      return;
+    requestedSort.current = sort;
+    invalidateBatchWork();
+    const token = crypto.randomUUID();
+    pendingSortFocus = token;
+    void navigate(shopUrl({ ...data.filters, sort }), {
+      preventScrollReset: true,
+      state: { shopSortFocus: token, shopSortValue: sort },
+    });
+  }
 
   useEffect(() => {
     const arm = () => setAutoArmKey(location.key);
@@ -168,17 +224,18 @@ export function ShopDiscovery({
       return;
     }
     const controller = new AbortController();
+    restorationController.current = controller;
     const runId = ++restorationRun.current;
-    let started = false;
     const run = async () => {
       if (controller.signal.aborted) return;
-      started = true;
       setBusy(true);
       const startedAt = epoch.current;
       try {
         while (pagesRef.current.length < target) {
           const last = pagesRef.current.at(-1)!;
           if (!last.nextCursor || !last.hasMore) {
+            if (controller.signal.aborted || startedAt !== epoch.current)
+              return;
             const corrected = shopUrl(data.filters, {
               batches: pagesRef.current.length,
             });
@@ -194,7 +251,8 @@ export function ShopDiscovery({
             } finally {
               clear();
             }
-            restoreScroll();
+            if (!controller.signal.aborted && startedAt === epoch.current)
+              restoreScroll();
             break;
           }
           const next = await readPage(last.nextCursor, controller.signal);
@@ -210,13 +268,16 @@ export function ShopDiscovery({
       } catch {
         if (!controller.signal.aborted) setFailed(true);
       } finally {
+        if (restorationController.current === controller)
+          restorationController.current = null;
         if (restorationRun.current === runId) setBusy(false);
       }
     };
     void Promise.resolve().then(run);
     return () => {
       controller.abort();
-      if (started) setBusy(false);
+      if (restorationController.current === controller)
+        restorationController.current = null;
     };
     // Reads are driven by the URL batch target and the fresh first page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -252,12 +313,18 @@ export function ShopDiscovery({
           setStale(true);
           return;
         }
+        const previousCount = uniqueCards(pagesRef.current).length;
         pagesRef.current = [...pagesRef.current, next];
         setPages(pagesRef.current);
         const url = shopUrl(data.filters, { batches: pagesRef.current.length });
         const clear = onBatchSupplied(url);
         try {
           await navigate(url, { preventScrollReset: true });
+          const added = uniqueCards(pagesRef.current).length - previousCount;
+          if (startedAt === epoch.current && added > 0)
+            setAppendAnnouncement(
+              `${added} more ${added === 1 ? "product" : "products"} loaded.`,
+            );
         } finally {
           clear();
         }
@@ -265,9 +332,10 @@ export function ShopDiscovery({
         if (!controller.signal.aborted && startedAt === epoch.current)
           setFailed(true);
       } finally {
-        pending.current = false;
-        if (appendController.current === controller)
+        if (appendController.current === controller) {
+          pending.current = false;
           appendController.current = null;
+        }
         if (startedAt === epoch.current) setBusy(false);
       }
     },
@@ -357,7 +425,7 @@ export function ShopDiscovery({
   const hasChoices = activeFilters.length > 0 || data.filters.sort !== "newest";
   return (
     <>
-      <div className="shop-toolbar">
+      <div className="shop-toolbar" ref={toolbar}>
         <details className="shop-filter-disclosure">
           <summary>
             Filters{activeFilters.length ? ` (${activeFilters.length})` : ""}
@@ -367,7 +435,7 @@ export function ShopDiscovery({
             method="get"
             className="shop-filter-panel"
             role="search"
-            onSubmit={() => appendController.current?.abort()}
+            onSubmit={invalidateBatchWork}
           >
             <input type="hidden" name="sort" value={data.filters.sort} />
             <label className="shop-control shop-control--search">
@@ -459,7 +527,7 @@ export function ShopDiscovery({
           action="/shop"
           method="get"
           className="shop-sort-form"
-          onSubmit={() => appendController.current?.abort()}
+          onSubmit={invalidateBatchWork}
         >
           {(
             ["q", "category", "material", "colour", "availability"] as const
@@ -476,37 +544,44 @@ export function ShopDiscovery({
           <label className="shop-control shop-sort-control">
             Sort by
             <select
+              ref={sortControl}
               name="sort"
               defaultValue={data.filters.sort}
               key={`sort-${baseUrl}`}
+              onChange={(event) =>
+                changeSort(event.currentTarget.value as ShopSort)
+              }
             >
               <option value="newest">Newest</option>
               <option value="price-asc">Price: low to high</option>
               <option value="price-desc">Price: high to low</option>
             </select>
           </label>
-          <button type="submit" className="shop-apply-button">
-            Apply
-          </button>
+          <noscript>
+            <button type="submit" className="shop-apply-button">
+              Show sorted results
+            </button>
+          </noscript>
         </form>
       </div>
-      <div className="shop-active-summary">
-        <p>
-          {hasChoices
-            ? `Showing: ${[...activeFilters, data.filters.sort !== "newest" ? `Sort: ${data.filters.sort === "price-asc" ? "Price low to high" : "Price high to low"}` : null].filter(Boolean).join(" · ")}`
-            : "Showing: All pieces"}
-        </p>
-        {hasChoices ? (
+      {hasChoices ? (
+        <div className="shop-active-summary">
+          <p>
+            {`Showing: ${[...activeFilters, data.filters.sort !== "newest" ? `Sort: ${data.filters.sort === "price-asc" ? "Price low to high" : "Price high to low"}` : null].filter(Boolean).join(" · ")}`}
+          </p>
           <Link to="/shop" onClick={() => appendController.current?.abort()}>
             Clear
           </Link>
-        ) : null}
-      </div>
-      <p className="shop-results-status" aria-live="polite">
-        {busy && target > pages.length
-          ? "Restoring your results…"
-          : `${shown.length} pieces shown`}
+        </div>
+      ) : null}
+      <p className="shop-sr-only" aria-live="polite" aria-atomic="true">
+        {appendAnnouncement}
       </p>
+      {busy && target > pages.length ? (
+        <p className="shop-results-status" role="status">
+          Restoring your results…
+        </p>
+      ) : null}
       {target > 1 ? (
         <noscript>
           <p>
@@ -599,6 +674,11 @@ export function ShopDiscovery({
         <p className="shop-page-message" role="status">
           You’ve reached the browsing limit. Use search or filters to narrow the
           collection and find more pieces.
+        </p>
+      ) : null}
+      {!last.hasMore && shown.length > 0 && !stale && !failed ? (
+        <p className="shop-end-status">
+          You’ve reached the end of these results.
         </p>
       ) : null}
       {!stale && !failed && !atBrowsingLimit && nextUrl ? (
