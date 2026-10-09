@@ -1,7 +1,11 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useNavigation } from "react-router";
 
 export function AdminShell({ children }: { children: ReactNode }) {
+  const navigation = useNavigation();
+  const openingWebsite =
+    navigation.state !== "idle" && navigation.location?.pathname === "/";
+
   return (
     <div className="admin-shell">
       <header className="admin-header">
@@ -13,9 +17,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <Link to="/admin/products">Products</Link>
             <Link to="/admin/products/new">Add product</Link>
           </nav>
-          <a className="admin-back-link" href="/">
-            View website <span aria-hidden="true">↗</span>
-          </a>
+          <Link className="admin-back-link" to="/">
+            <span aria-live="polite">
+              {openingWebsite ? "Opening website…" : "View website"}
+            </span>{" "}
+            <span aria-hidden="true">↗</span>
+          </Link>
         </div>
       </header>
       <main className="admin-main" id="main">
