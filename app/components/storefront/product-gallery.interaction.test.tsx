@@ -226,6 +226,8 @@ describe("product photo and gallery interaction", () => {
     await act(async () =>
       root.render(<ProductPhoto src="/missing/card" alt="Orbit Ring" />),
     );
+    expect(container.textContent).toContain("Loading photo…");
+    expect(container.textContent).not.toContain("Photo unavailable");
     const img = container.querySelector("img")!;
     await act(async () => img.dispatchEvent(new Event("error")));
     expect(container.querySelector("img")).toBeNull();
