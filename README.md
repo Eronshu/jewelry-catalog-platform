@@ -362,7 +362,8 @@ the standalone visual fixture do not replace that gate.
 
 ## Deployment
 
-Deployment is not configured by Issue #1. The production build targets
-Cloudflare Workers and Static Assets, but no Cloudflare resources, live
-bindings, preview deployments, production deployments, or credentials are
-created by this scaffold.
+Production deployment is not configured. The production build targets
+Cloudflare Workers and Static Assets, but this branch has only an isolated
+Worker Preview with dedicated D1 and R2 resources. Its setup, acceptance
+checks, and rollback steps are documented in
+[docs/PROTECTED_PREVIEW_RUNBOOK.md](./docs/PROTECTED_PREVIEW_RUNBOOK.md).

@@ -20,4 +20,22 @@
       "migrations_table": "catalog_migrations",
     },
   ],
+  "previews": {
+    "images": { "binding": "IMAGES" },
+    "r2_buckets": [
+      {
+        "binding": "PRODUCT_IMAGES",
+        "bucket_name": "jewelry-catalog-preview-images",
+      },
+    ],
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "jewelry-catalog-preview-d1",
+        "database_id": "2a9ffb59-cc54-4c1d-97e8-45ddd8b36aa2",
+        "migrations_dir": "migrations",
+        "migrations_table": "catalog_migrations",
+      },
+    ],
+  },
 }

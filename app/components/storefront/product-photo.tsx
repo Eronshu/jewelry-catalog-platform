@@ -24,6 +24,7 @@ export function ProductPhoto({
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const image = useRef<HTMLImageElement>(null);
   const visible = src !== null && src !== failedSrc;
+  const fallbackText = visible ? "Loading photo…" : "Photo unavailable";
 
   useEffect(() => {
     // A server-rendered image can fail before React attaches onError.
@@ -40,7 +41,7 @@ export function ProductPhoto({
   return (
     <span className={`product-photo ${className}`}>
       <span className="product-photo-fallback" aria-hidden={visible}>
-        Photo unavailable
+        {fallbackText}
       </span>
       {visible ? (
         <img

@@ -6,6 +6,7 @@ export default defineConfig({
     include: [
       "app/**/*.test.{ts,tsx}",
       "tests/admin-shell-preview/**/*.test.{ts,tsx}",
+      "tests/preview-configuration.test.ts",
     ],
   },
 });
