@@ -1,14 +1,19 @@
 # Jewelry Catalog Platform
 
 A Cloudflare-native React Router application for a small-business jewelry
-catalog and its future owner-facing administration tools. The V1 product scope
+catalog and owner-facing administration tools. The V1 product scope
 and architecture are defined in [PROJECT_SPEC.md](./PROJECT_SPEC.md).
+
+The current public-facing name, **Velaform Studio**, is a fictional portfolio
+demo. The reproducible 300-product concept catalog and its private images are
+described in [docs/PORTFOLIO_DEMO.md](./docs/PORTFOLIO_DEMO.md). They are not
+real inventory or a checkout-enabled shop.
 
 The Shop route reads public products from its D1 binding and links photographed
 cards to public product detail pages. Home still uses a labeled visual design
-fixture. Private local R2 image delivery is configured. A protected admin
-foundation is present, but real Cloudflare Access
-configuration and deployment are not configured yet.
+fixture. Private R2 image delivery is configured. A protected Admin is running
+on the isolated Worker Preview. Production launch and a real domain remain
+separate work.
 
 ## Requirements
 
