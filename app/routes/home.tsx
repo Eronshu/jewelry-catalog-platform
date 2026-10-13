@@ -22,7 +22,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 export function meta() {
   return [
-    { title: "Wear it your way | Jewelry Catalog" },
+    { title: "Wear it your way | Velaform Studio" },
     {
       name: "description",
       content: "Jewelry for every version of you.",

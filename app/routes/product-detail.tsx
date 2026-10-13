@@ -53,14 +53,14 @@ export async function loader({ context, params }: Route.LoaderArgs) {
 export function meta({ loaderData }: Route.MetaArgs) {
   if (!loaderData) {
     return [
-      { title: "Product unavailable | Jewelry Catalog" },
+      { title: "Product unavailable | Velaform Studio" },
       { name: "description", content: "Browse the jewelry collection." },
     ];
   }
   const { product } = loaderData;
   const summary = product.description?.trim().replace(/\s+/g, " ");
   return [
-    { title: `${product.name} | Jewelry Catalog` },
+    { title: `${product.name} | Velaform Studio` },
     {
       name: "description",
       content: summary

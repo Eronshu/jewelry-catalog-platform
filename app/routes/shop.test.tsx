@@ -168,7 +168,7 @@ describe("shop route", () => {
     expect(html).not.toContain(">Apply</button>");
     expect(html).toContain("Search by name");
     expect(html).not.toMatch(/sku|r2_key|admin\/products/i);
-    expect(meta()).toContainEqual({ title: "Shop | Jewelry Catalog" });
+    expect(meta()).toContainEqual({ title: "Shop | Velaform Studio" });
   });
 
   it("renders a plain next-page link for a no-JavaScript visit", () => {

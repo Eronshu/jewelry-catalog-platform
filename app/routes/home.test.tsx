@@ -115,7 +115,7 @@ describe("home catalog merchandising", () => {
 
   it("retains baseline metadata", () => {
     expect(meta()).toContainEqual({
-      title: "Wear it your way | Jewelry Catalog",
+      title: "Wear it your way | Velaform Studio",
     });
   });
 });

@@ -72,7 +72,7 @@ describe("public product detail", () => {
       /r2Key|r2_key|\/admin\/products|products\/7\/.*\.jpg/,
     );
     expect(meta({ loaderData: data } as Route.MetaArgs)).toContainEqual({
-      title: "Silver Orbit Ring | Jewelry Catalog",
+      title: "Silver Orbit Ring | Velaform Studio",
     });
   });
 
@@ -136,7 +136,7 @@ describe("public product detail", () => {
     expect(html).toContain("Product not found");
     expect(html).not.toContain("private-item");
     expect(meta({ loaderData: undefined } as Route.MetaArgs)).toContainEqual({
-      title: "Product unavailable | Jewelry Catalog",
+      title: "Product unavailable | Velaform Studio",
     });
   });
 

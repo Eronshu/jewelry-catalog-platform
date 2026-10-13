@@ -70,7 +70,7 @@ export function shouldRevalidate({
 
 export function meta() {
   return [
-    { title: "Shop | Jewelry Catalog" },
+    { title: "Shop | Velaform Studio" },
     { name: "description", content: "Browse the jewelry collection." },
   ];
 }
@@ -103,7 +103,7 @@ export default function Shop({ loaderData }: Route.ComponentProps) {
           </nav>
           <div className="shop-intro-heading">
             <h1 id="shop-title">Shop</h1>
-            <p>Find your next favorite piece.</p>
+            <p>Fictional portfolio catalog · products are not for sale.</p>
           </div>
         </div>
       </section>

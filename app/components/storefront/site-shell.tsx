@@ -78,7 +78,7 @@ function SiteHeader() {
     <header className="site-header">
       <div className="container header-inner">
         <Link className="wordmark" to="/" onClick={() => setMenuOpen(false)}>
-          Jewelry Catalog
+          Velaform Studio
         </Link>
         <nav aria-label="Primary" className="desktop-nav">
           <PrimaryLinks />
@@ -133,7 +133,8 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
       <footer className="site-footer">
         <div className="container footer-inner">
           <p className="footer-note">
-            Jewelry Catalog <span aria-hidden="true">·</span> Working name
+            Velaform Studio <span aria-hidden="true">·</span> Fictional
+            portfolio demo
           </p>
           <nav aria-label="Footer" className="footer-nav">
             <Link to="/shop">Shop</Link>
