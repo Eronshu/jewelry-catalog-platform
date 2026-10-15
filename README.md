@@ -1,19 +1,40 @@
 # Jewelry Catalog Platform
 
-A Cloudflare-native React Router application for a small-business jewelry
-catalog and owner-facing administration tools. The V1 product scope
-and architecture are defined in [PROJECT_SPEC.md](./PROJECT_SPEC.md).
+A full-stack jewelry catalog and owner-facing Admin built with React Router,
+TypeScript, and Cloudflare Workers. The project began as a future small-business
+website and currently runs as **Velaform Studio**, a fictional portfolio demo.
 
-The current public-facing name, **Velaform Studio**, is a fictional portfolio
-demo. The reproducible 300-product concept catalog and its private images are
-described in [docs/PORTFOLIO_DEMO.md](./docs/PORTFOLIO_DEMO.md). They are not
-real inventory or a checkout-enabled shop.
+**[Explore the live demo](https://protected-cloudflare-preview-jewelry-catalog-platform.shugegogogo.workers.dev/)** ·
+[Browse the 300-product catalog](https://protected-cloudflare-preview-jewelry-catalog-platform.shugegogogo.workers.dev/shop) ·
+[Read the project case study](./docs/PORTFOLIO_CASE_STUDY.md)
 
-The Shop route reads public products from its D1 binding and links photographed
-cards to public product detail pages. Home still uses a labeled visual design
-fixture. Private R2 image delivery is configured. A protected Admin is running
-on the isolated Worker Preview. Production launch and a real domain remain
-separate work.
+> **Demo scope:** The brand, products, prices, and illustrations are fictional.
+> Nothing is for sale. The protected Admin is not a public demo account. This
+> Preview has `noindex`; a custom domain and production launch are future work.
+
+## What the project demonstrates
+
+- A server-rendered storefront with category browsing, search, filters, sorting,
+  product details, responsive images, and 24-item Load More pagination.
+- An owner-facing Admin for drafts, publishing, product updates, status changes,
+  and photo upload and ordering, protected by Cloudflare Access and a Worker JWT
+  check.
+- An isolated Cloudflare Preview using D1 for catalog data, private R2 for image
+  originals, and Cloudflare Images for delivery. The 300 demo products and
+  distinct WebP concept illustrations are reproducible from the generator;
+  generated binaries are not committed.
+- Automated formatting, lint, type checks, tests, and a production build in CI.
+
+The intended V1 is a catalog that directs interested customers to the owner's
+sales channel. Cart, checkout, payments, shipping, and order management are not
+implemented. The full scope and architecture are in
+[PROJECT_SPEC.md](./PROJECT_SPEC.md); demo data and cleanup are documented in
+[docs/PORTFOLIO_DEMO.md](./docs/PORTFOLIO_DEMO.md).
+
+The Shop route reads public products from its D1 binding and links cards to
+product detail pages. Home still uses a labeled visual design fixture. Private
+R2 image delivery is configured. A protected Admin is running on the isolated
+Worker Preview. Production launch and a real domain remain separate work.
 
 ## Requirements
 
