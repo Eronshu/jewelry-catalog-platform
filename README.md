@@ -32,8 +32,9 @@ implemented. The full scope and architecture are in
 [docs/PORTFOLIO_DEMO.md](./docs/PORTFOLIO_DEMO.md).
 
 The Shop route reads public products from its D1 binding and links cards to
-product detail pages. Home still uses a labeled visual design fixture. Private
-R2 image delivery is configured. A protected Admin is running on the isolated
+product detail pages. Home features the four newest public catalog products;
+hero and editorial photography remain temporary design assets. Private R2
+image delivery is configured. A protected Admin is running on the isolated
 Worker Preview. Production launch and a real domain remain separate work.
 
 ## Requirements
