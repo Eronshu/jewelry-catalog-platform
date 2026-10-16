@@ -30,8 +30,9 @@ flowchart LR
   Admin --> Worker
 ```
 
-- The storefront renders Home, Shop, category and product views. Shop queries D1
-  in batches of 24 and supports search, filters, sorting, and Load More.
+- The storefront renders Home, Shop with category filtering, and product detail
+  pages. Shop queries D1 in batches of 24 and supports search, filters, sorting,
+  and Load More.
 - Product media is stored privately in R2 and delivered at card, detail, and
   zoom sizes. The media handler checks product visibility before serving a
   fresh response; transformed images can remain cached until they expire.
