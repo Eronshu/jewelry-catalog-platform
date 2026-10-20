@@ -29,7 +29,13 @@ The intended V1 is a catalog that directs interested customers to the owner's
 sales channel. Cart, checkout, payments, shipping, and order management are not
 implemented. The full scope and architecture are in
 [PROJECT_SPEC.md](./PROJECT_SPEC.md); demo data and cleanup are documented in
-[docs/PORTFOLIO_DEMO.md](./docs/PORTFOLIO_DEMO.md).
+[docs/PORTFOLIO_DEMO.md](./docs/PORTFOLIO_DEMO.md). The owner's draft
+requirements for a future real-sales phase are in
+[docs/ONLINE_SALES_REQUIREMENTS.md](./docs/ONLINE_SALES_REQUIREMENTS.md),
+with a platform comparison and implementation plan in
+[docs/ONLINE_SALES_IMPLEMENTATION_PLAN.md](./docs/ONLINE_SALES_IMPLEMENTATION_PLAN.md).
+An isolated [local payment sandbox](./docs/PAYMENT_SANDBOX_SPIKE.md) can be used
+to compare Stripe and PayPal test flows without changing the live catalog.
 
 The Shop route reads public products from its D1 binding and links cards to
 product detail pages. Home features the four newest public catalog products;

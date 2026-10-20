@@ -4,6 +4,11 @@
 **Last reviewed:** 2026-09-28  
 **Primary goal:** Build a polished, production-ready jewelry catalog website with a Shopify-like admin experience, while keeping recurring infrastructure cost near zero at the current business scale.
 
+The owner later described a possible direct-sales phase. Its emerging business
+requirements are tracked separately in
+[docs/ONLINE_SALES_REQUIREMENTS.md](./docs/ONLINE_SALES_REQUIREMENTS.md).
+This frozen V1 scope does not imply that checkout or payments are implemented.
+
 ---
 
 ## 1. Product Summary
