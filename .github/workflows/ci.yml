@@ -42,5 +42,9 @@ jobs:
       - name: Test
         run: npm test
 
+      # Mocked HTTP only; never inject provider credentials into PR jobs.
+      - name: Test payment prototype contracts (no provider calls)
+        run: npm run payment:spike:test
+
       - name: Build
         run: npm run build
