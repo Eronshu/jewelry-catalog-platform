@@ -12,3 +12,5 @@
 - Admin UX is designed for a non-technical business owner.
 - Mobile Safari is a first-class supported platform.
 - Destructive production actions require explicit human approval.
+- Finish one reviewable task per feature branch: commit, open a PR, then wait for CI and review. Do not add the next task before that PR is reviewed and merged. Start the next task from updated main.
+- Preserve `codex/product-cart-local` as the commerce backup branch; do not merge or delete it directly. Follow `docs/COMMERCE_PR_SEQUENCE.md` for the existing commerce series. C09b stays paused until that series is merged.
