@@ -9,7 +9,7 @@ import {
 } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ShoppingCart from "../../routes/cart";
-import { ProductPurchase } from "./product-purchase";
+import ProductDetail from "../../routes/product-detail";
 import {
   ShoppingCartProvider,
   ShoppingNavigation,
@@ -49,10 +49,25 @@ let failure = false;
 let requests: unknown[];
 function FixtureProduct() {
   const { slug } = useParams();
+  const variants = items.filter((item) => item.slug === slug);
+  const product = variants[0];
   return (
-    <ProductPurchase
-      key={slug}
-      variants={items.filter((item) => item.slug === slug)}
+    <ProductDetail
+      params={{ slug: slug! }}
+      matches={[] as never}
+      loaderData={{
+        product: {
+          name: product.name,
+          priceCents: product.priceCents,
+          status: "available",
+          description: null,
+          material: null,
+          colour: null,
+          facebookUrl: null,
+        },
+        gallery: [],
+        shoppingVariants: variants,
+      }}
     />
   );
 }
@@ -149,6 +164,25 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("local product to cart journey", () => {
+  it("clears purchase feedback when navigating between same-name product details", async () => {
+    items = items.map((item) => ({ ...item, name: "Fictional necklace" }));
+    await mount();
+    await click("Add to cart");
+    expect(document.querySelector('[role="status"]')?.textContent).toContain(
+      "Added to your cart",
+    );
+    await navigate("/products/bar");
+    expect(document.body.textContent).not.toContain("Added to your cart");
+    expect(stored()).toEqual([{ variantId: "gold", quantity: 1 }]);
+    await click("Add to cart");
+    expect(stored()).toEqual([
+      { variantId: "gold", quantity: 1 },
+      { variantId: "silver", quantity: 1 },
+    ]);
+    await navigate(-1);
+    expect(document.body.textContent).not.toContain("Added to your cart");
+  });
+
   it("merges a SKU, adds a second product, restores after refresh and removes with focus feedback", async () => {
     await mount();
     await click("Add to cart");

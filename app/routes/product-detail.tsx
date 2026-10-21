@@ -89,7 +89,10 @@ export function meta({ loaderData }: Route.MetaArgs) {
   ];
 }
 
-export default function ProductDetail({ loaderData }: Route.ComponentProps) {
+export default function ProductDetail({
+  loaderData,
+  params,
+}: Route.ComponentProps) {
   const { product, gallery, shoppingVariants } = loaderData;
   return (
     <div className="container product-detail">
@@ -112,7 +115,7 @@ export default function ProductDetail({ loaderData }: Route.ComponentProps) {
               </p>
             </>
           ) : (
-            <ProductPurchase key={product.name} variants={shoppingVariants} />
+            <ProductPurchase key={params.slug} variants={shoppingVariants} />
           )}
           {product.description ? (
             <p className="product-detail-description">{product.description}</p>
