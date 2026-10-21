@@ -352,13 +352,15 @@ describe("Worker to React Router admin boundary", () => {
     expect(nested.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
-  it("creates one Draft through the Worker and real product action only for an approved human", async () => {
+  describe("with migrated local D1 and R2", () => {
     const root = resolve(process.cwd());
-    const localDir = mkdtempSync(
-      join(tmpdir(), "jewelry-admin-boundary-test-"),
-    );
-    let platform: Awaited<ReturnType<typeof getPlatformProxy<Env>>> | undefined;
-    try {
+    let localDir: string;
+    let platform: Awaited<ReturnType<typeof getPlatformProxy<Env>>>;
+
+    // Cold migrations/runtime startup need their own budget; request assertions
+    // retain the default test timeout rather than relaxing the entire suite.
+    beforeAll(async () => {
+      localDir = mkdtempSync(join(tmpdir(), "jewelry-admin-boundary-test-"));
       execFileSync(
         join(root, "node_modules", ".bin", "wrangler"),
         [
@@ -378,6 +380,7 @@ describe("Worker to React Router admin boundary", () => {
             WRANGLER_LOG_PATH: join(localDir, "wrangler.log"),
           },
           stdio: "pipe",
+          timeout: 20_000,
         },
       );
       platform = await getPlatformProxy<Env>({
@@ -386,6 +389,17 @@ describe("Worker to React Router admin boundary", () => {
         persist: { path: join(localDir, "v3") },
         remoteBindings: false,
       });
+    }, 30_000);
+
+    afterAll(async () => {
+      try {
+        await platform?.dispose();
+      } finally {
+        if (localDir) rmSync(localDir, { recursive: true, force: true });
+      }
+    }, 10_000);
+
+    it("creates one Draft through the Worker and real product action only for an approved human", async () => {
       const productEnv = { ...platform.env, ...env } as Env;
       const addDocument = await handleWorkerRequest(
         new Request("https://example.invalid/admin/products/new", {
@@ -566,10 +580,7 @@ describe("Worker to React Router admin boundary", () => {
       );
       expect(preview.status).toBe(200);
       expect(preview.headers.get("Cache-Control")).toBe("private, no-store");
-    } finally {
-      await platform?.dispose();
-      rmSync(localDir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("keeps unexpected admin route errors generic and uncacheable", async () => {
