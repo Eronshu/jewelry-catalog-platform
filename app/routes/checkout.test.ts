@@ -39,7 +39,7 @@ describe("checkout page local-only boundary", () => {
       url: new URL("http://localhost/checkout"),
       pattern: "/checkout",
     });
-    expect(result.data).toEqual({ localPreview: true });
+    expect(result.data).toEqual({ localPreview: true, placesKey: null });
     expect(new Headers(result.init?.headers).get("Set-Cookie")).toBeNull();
     expect(headers()).toEqual({
       "Cache-Control": "private, no-store",

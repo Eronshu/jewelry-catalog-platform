@@ -7,6 +7,35 @@ import Checkout from "../../routes/checkout";
 import { ShoppingCartProvider, useShoppingCart } from "./shopping-cart-context";
 import { SHOPPING_CART_KEY } from "../../lib/commerce/shopping-cart";
 import type { CheckoutInput, CheckoutQuote } from "../../lib/commerce/checkout";
+import {
+  loadGooglePlaces,
+  type GooglePlace,
+  type PlacesLibrary,
+} from "../../lib/commerce/google-places.client";
+
+vi.mock("../../lib/commerce/google-places.client", () => ({
+  loadGooglePlaces: vi.fn(),
+}));
+const testBrowserKey = "AIza" + "x".repeat(35);
+let googleWidget: HTMLElement;
+let widgetOptions: unknown;
+const placeComponents = () => [
+  { types: ["country"], shortText: "CA", longText: "Canada" },
+  { types: ["street_number"], longText: "200" },
+  { types: ["route"], longText: "Fictional New Street" },
+  { types: ["locality"], longText: "New Test City" },
+  { types: ["administrative_area_level_1"], shortText: "BC" },
+  { types: ["postal_code"], longText: "V1A 0B1" },
+];
+async function selectPlace(place: GooglePlace) {
+  await act(async () => {
+    const event = new Event("gmp-select");
+    Object.defineProperty(event, "placePrediction", {
+      value: { toPlace: () => place },
+    });
+    googleWidget.dispatchEvent(event);
+  });
+}
 
 let root: Root;
 let router: ReturnType<typeof createMemoryRouter>;
@@ -57,7 +86,7 @@ function CartTools() {
     </>
   );
 }
-async function mount() {
+async function mount(placesKey: string | null = null) {
   router = createMemoryRouter(
     [
       {
@@ -67,7 +96,12 @@ async function mount() {
           </ShoppingCartProvider>
         ),
         children: [
-          { path: "/checkout", Component: Checkout },
+          {
+            path: "/checkout",
+            Component: Checkout,
+            loader: () => ({ localPreview: true, placesKey }),
+            HydrateFallback: () => null,
+          },
           { path: "/cart", element: <p>Cart</p> },
         ],
       },
@@ -140,6 +174,16 @@ function deferred() {
 }
 
 beforeEach(() => {
+  vi.mocked(loadGooglePlaces)
+    .mockReset()
+    .mockResolvedValue({
+      PlaceAutocompleteElement: function (options: unknown) {
+        widgetOptions = options;
+        googleWidget = document.createElement("div");
+        googleWidget.setAttribute("data-test-widget", "true");
+        return googleWidget;
+      } as unknown as PlacesLibrary["PlaceAutocompleteElement"],
+    });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   requests = [];
   fetchMock = vi.fn(async (_url, options: RequestInit) => {
@@ -167,6 +211,194 @@ afterEach(async () => {
 });
 
 describe("local delivery form and quote review", () => {
+  it("does not load Google for missing configuration, pickup or a shipping form before opt-in", async () => {
+    await mount();
+    await field("method", "shipping");
+    expect(document.body.textContent).toContain(
+      "Address suggestions are unavailable",
+    );
+    expect(loadGooglePlaces).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    router.dispose();
+    root = createRoot(document.getElementById("root")!);
+    await mount(testBrowserKey);
+    expect(document.body.textContent).not.toContain(
+      "Search address with Google",
+    );
+    await field("method", "shipping");
+    expect(button("Search address with Google")).toBeTruthy();
+    expect(loadGooglePlaces).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("maps a chosen Canadian address, preserves apartment edits and clears quote confirmation", async () => {
+    await mount(testBrowserKey);
+    await contact();
+    await field("method", "shipping");
+    await address();
+    await submit();
+    await confirm();
+    await click("Search address with Google");
+    expect(widgetOptions).toMatchObject({
+      includedRegionCodes: ["ca"],
+      requestedLanguage: "en",
+      requestedRegion: "ca",
+    });
+    expect(JSON.stringify(widgetOptions)).not.toContain("Fictional Customer");
+    const fetchFields = vi.fn().mockResolvedValue(undefined);
+    await selectPlace({ addressComponents: placeComponents(), fetchFields });
+    expect(fetchFields).toHaveBeenCalledWith({ fields: ["addressComponents"] });
+    expect(
+      (
+        document.getElementById(
+          "checkout-delivery-address-line1",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("200 Fictional New Street");
+    expect(
+      (
+        document.getElementById(
+          "checkout-delivery-address-line2",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("Unit TEST");
+    expect(checkbox()).toBeNull();
+    await submit();
+    expect(requests.at(-1)?.delivery).toMatchObject({
+      address: {
+        line1: "200 Fictional New Street",
+        province: "BC",
+        line2: "Unit TEST",
+      },
+    });
+    expect(window.localStorage.length).toBe(1);
+    expect(window.localStorage.getItem(SHOPPING_CART_KEY)).not.toContain(
+      "Street",
+    );
+    expect(window.sessionStorage.length).toBe(0);
+  });
+  it("leaves missing number/postal code empty so a previous complete address cannot slip into a new quote", async () => {
+    await mount(testBrowserKey);
+    await contact();
+    await field("method", "shipping");
+    await address();
+    await click("Search address with Google");
+    await selectPlace({
+      addressComponents: placeComponents().filter(
+        (c) =>
+          !c.types.includes("street_number") &&
+          !c.types.includes("postal_code"),
+      ),
+      fetchFields: vi.fn().mockResolvedValue(undefined),
+    });
+    await submit();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Street address",
+    );
+  });
+  it("ignores a late details response after manual edits, and keeps its fields editable", async () => {
+    await mount(testBrowserKey);
+    await field("method", "shipping");
+    await address();
+    await click("Search address with Google");
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => (finish = resolve));
+    // Start an event without awaiting its remote details promise.
+    await selectPlace({
+      addressComponents: placeComponents(),
+      fetchFields: () => pending,
+    });
+    await field("delivery.address.line1", "300 Manual Fictional Street");
+    await act(async () => finish());
+    expect(
+      (
+        document.getElementById(
+          "checkout-delivery-address-line1",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("300 Manual Fictional Street");
+    expect(document.body.textContent).toContain("Your details changed");
+  });
+  it.each(["pickup", "cart"])(
+    "discards a late selection after changing %s",
+    async (change) => {
+      await mount(testBrowserKey);
+      await field("method", "shipping");
+      await address();
+      await click("Search address with Google");
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => (finish = resolve));
+      await selectPlace({
+        addressComponents: placeComponents(),
+        fetchFields: () => pending,
+      });
+      if (change === "pickup") await field("method", "pickup");
+      else await click("Change cart");
+      await act(async () => finish());
+      if (change === "pickup") await field("method", "shipping");
+      expect(
+        (
+          document.getElementById(
+            "checkout-delivery-address-line1",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("100 Fictional Test Street");
+    },
+  );
+  it("drops earlier selections and in-flight details when a new search starts", async () => {
+    await mount(testBrowserKey);
+    await field("method", "shipping");
+    await address();
+    await click("Search address with Google");
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => (finish = resolve));
+    await selectPlace({
+      addressComponents: placeComponents(),
+      fetchFields: () => pending,
+    });
+    await act(async () => googleWidget.dispatchEvent(new Event("input")));
+    await act(async () => finish());
+    expect(
+      (
+        document.getElementById(
+          "checkout-delivery-address-line1",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("100 Fictional Test Street");
+  });
+  it.each(["load", "auth", "details", "timeout"])(
+    "keeps manual entry and quotes usable after Google %s failure",
+    async (failure) => {
+      if (failure === "load")
+        vi.mocked(loadGooglePlaces).mockRejectedValueOnce(
+          new Error("private provider error"),
+        );
+      if (failure === "timeout") vi.useFakeTimers();
+      await mount(testBrowserKey);
+      await contact();
+      await field("method", "shipping");
+      await address();
+      await click("Search address with Google");
+      if (failure === "auth")
+        await act(async () =>
+          googleWidget.dispatchEvent(new Event("gmp-error")),
+        );
+      if (failure === "details")
+        await selectPlace({
+          fetchFields: vi.fn().mockRejectedValue(new Error("private address")),
+        });
+      if (failure === "timeout") {
+        await selectPlace({ fetchFields: () => new Promise(() => {}) });
+        await act(async () => vi.advanceTimersByTime(10_001));
+      }
+      expect(document.body.textContent).toContain(
+        "Google address search is unavailable",
+      );
+      expect(document.body.textContent).not.toContain("private provider error");
+      await submit();
+      expect(checkbox()).not.toBeNull();
+    },
+  );
   it("requires fresh review after a refreshed quote changes the amount", async () => {
     await mount();
     await contact();
