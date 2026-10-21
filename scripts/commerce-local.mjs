@@ -31,6 +31,10 @@ writeFileSync(
         run_worker_first: [
           "/cart",
           "/cart.data",
+          "/checkout",
+          "/checkout.data",
+          "/checkout/quote",
+          "/checkout/quote.data",
           "/commerce-lab",
           "/commerce-lab.data",
           "/admin",

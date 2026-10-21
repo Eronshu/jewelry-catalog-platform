@@ -210,6 +210,9 @@ describe("local product to cart journey", () => {
       { variantId: "gold", quantity: 2 },
       { variantId: "silver", quantity: 1 },
     ]);
+    expect(document.querySelector('a[href="/checkout"]')?.textContent).toBe(
+      "Review delivery (local test)",
+    );
     await navigate(-1);
     expect(document.body.textContent).toContain("View cart (3)");
     await navigate("/cart");
@@ -262,6 +265,7 @@ describe("local product to cart journey", () => {
       document.querySelector('[aria-label="Cart summary"]')?.textContent,
     ).toContain("$27.00");
     expect(document.body.textContent).toContain("Not enough available stock");
+    expect(document.querySelector('a[href="/checkout"]')).toBeNull();
   });
   it("keeps the cart usable across navigation when saving is blocked", async () => {
     await mount();
