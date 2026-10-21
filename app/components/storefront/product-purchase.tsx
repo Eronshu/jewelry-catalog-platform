@@ -8,7 +8,9 @@ export function ProductPurchase({ variants }: { variants: ShoppingVariant[] }) {
   const cart = useShoppingCart();
   const prefix = useId();
   const [selected, setSelected] = useState("");
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState<
+    { kind: "success" | "error"; message: string } | undefined
+  >();
   const variant =
     variants.find((item) => item.id === selected) ??
     variants.find((item) => item.active && item.available > 0) ??
@@ -20,11 +22,17 @@ export function ProductPurchase({ variants }: { variants: ShoppingVariant[] }) {
     const existing = cart.lines.find((line) => line.variantId === variant.id);
     const quantity = (existing?.quantity ?? 0) + 1;
     if (quantity > variant.available) {
-      setMessage("There is not enough available stock. Review your cart.");
+      setFeedback({
+        kind: "error",
+        message: "There is not enough available stock. Review your cart.",
+      });
       return;
     }
     if (quantity > 20 || (!existing && cart.lines.length >= 20)) {
-      setMessage("This preview allows 20 variants and up to 20 of each.");
+      setFeedback({
+        kind: "error",
+        message: "This preview allows 20 variants and up to 20 of each.",
+      });
       return;
     }
     cart.change(
@@ -34,9 +42,10 @@ export function ProductPurchase({ variants }: { variants: ShoppingVariant[] }) {
           )
         : [...cart.lines, { variantId: variant.id, quantity }],
     );
-    setMessage(
-      `Added ${variant.name} — ${variant.colour} to your cart. No stock is reserved.`,
-    );
+    setFeedback({
+      kind: "success",
+      message: `${variant.name} — ${variant.colour} · ${quantity} in your cart`,
+    });
   }
   return (
     <section className="shopping-purchase" aria-label="Local product selection">
@@ -48,7 +57,7 @@ export function ProductPurchase({ variants }: { variants: ShoppingVariant[] }) {
         className="commerce-delivery"
         onChange={(event) => {
           setSelected(event.target.value);
-          setMessage("");
+          setFeedback(undefined);
         }}
       >
         {variants.map((item) => (
@@ -72,10 +81,29 @@ export function ProductPurchase({ variants }: { variants: ShoppingVariant[] }) {
       >
         Add to cart
       </button>
-      <Link className="shopping-view-cart" to="/cart">
-        View cart
-      </Link>
-      <p role="status">{message}</p>
+      {feedback ? (
+        <div
+          className={`shopping-add-feedback shopping-add-feedback--${feedback.kind}`}
+          role={feedback.kind === "error" ? "alert" : "status"}
+        >
+          <span className="shopping-add-feedback-icon" aria-hidden="true">
+            {feedback.kind === "success" ? "✓" : "!"}
+          </span>
+          <div>
+            <strong>
+              {feedback.kind === "success"
+                ? "Added to your cart"
+                : "Could not add this item"}
+            </strong>
+            <p>{feedback.message}</p>
+          </div>
+          {feedback.kind === "success" && <Link to="/cart">View cart →</Link>}
+        </div>
+      ) : (
+        <Link className="shopping-view-cart" to="/cart">
+          View cart
+        </Link>
+      )}
     </section>
   );
 }

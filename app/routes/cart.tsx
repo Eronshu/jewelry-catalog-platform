@@ -100,8 +100,17 @@ export default function ShoppingCart() {
     if (status.current)
       status.current.textContent = "Item removed from your cart.";
   }
+  function changeQuantity(variantId: string, label: string, quantity: number) {
+    cart.change(
+      cart.lines.map((item) =>
+        item.variantId === variantId ? { ...item, quantity } : item,
+      ),
+    );
+    if (status.current)
+      status.current.textContent = `${label} quantity updated to ${quantity}.`;
+  }
   return (
-    <div className="container commerce-page">
+    <div className="container commerce-page shopping-cart-page">
       <header className="commerce-intro">
         <h1 ref={title} tabIndex={-1}>
           Your cart
@@ -192,50 +201,51 @@ export default function ShoppingCart() {
                         </p>
                       )}
                       <div className="commerce-cart-item-controls">
-                        <label htmlFor={`qty-${line.variantId}`}>
-                          Quantity for {label}
-                        </label>
-                        <input
-                          key={`${line.variantId}-${line.quantity}`}
-                          id={`qty-${line.variantId}`}
-                          className="commerce-quantity"
-                          type="number"
-                          inputMode="numeric"
-                          min="1"
-                          max="20"
-                          step="1"
-                          defaultValue={line.quantity}
-                          aria-invalid={unavailable || undefined}
+                        <div
+                          className="shopping-quantity-stepper"
+                          role="group"
+                          aria-label={`Quantity for ${label}`}
                           aria-describedby={
                             unavailable ? `stock-${line.variantId}` : undefined
                           }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter")
-                              event.currentTarget.blur();
-                          }}
-                          onBlur={(event) => {
-                            const quantity = event.currentTarget.valueAsNumber;
-                            if (
-                              !Number.isSafeInteger(quantity) ||
-                              quantity < 1 ||
-                              quantity > 20
-                            ) {
-                              event.currentTarget.value = String(line.quantity);
-                              if (status.current)
-                                status.current.textContent =
-                                  "Choose a whole quantity from 1 to 20, or remove the item.";
-                              return;
+                        >
+                          <button
+                            type="button"
+                            aria-label={`Decrease quantity for ${label}`}
+                            disabled={line.quantity <= 1}
+                            onClick={() =>
+                              changeQuantity(
+                                line.variantId,
+                                label,
+                                line.quantity - 1,
+                              )
                             }
-                            if (quantity !== line.quantity)
-                              cart.change(
-                                cart.lines.map((item) =>
-                                  item.variantId === line.variantId
-                                    ? { ...item, quantity }
-                                    : item,
-                                ),
-                              );
-                          }}
-                        />
+                          >
+                            <span aria-hidden="true">‹</span>
+                          </button>
+                          <span className="shopping-quantity-value">
+                            {line.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Increase quantity for ${label}`}
+                            disabled={
+                              line.quantity >= 20 ||
+                              !variant ||
+                              !variant.active ||
+                              line.quantity >= variant.available
+                            }
+                            onClick={() =>
+                              changeQuantity(
+                                line.variantId,
+                                label,
+                                line.quantity + 1,
+                              )
+                            }
+                          >
+                            <span aria-hidden="true">›</span>
+                          </button>
+                        </div>
                         <button
                           className="commerce-remove-button"
                           type="button"

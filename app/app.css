@@ -2249,6 +2249,112 @@ a {
 .shopping-purchase p {
   margin: 0;
 }
+.shopping-add-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #b8cbb7;
+  background: #f3f8f1;
+  color: var(--color-ink);
+}
+.shopping-add-feedback--error {
+  border-color: #d9b8b8;
+  background: #fdf1ef;
+}
+.shopping-add-feedback-icon {
+  display: grid;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: #315c3c;
+  color: #fff;
+  font-weight: 700;
+}
+.shopping-add-feedback--error .shopping-add-feedback-icon {
+  background: var(--color-accent);
+}
+.shopping-add-feedback > div {
+  flex: 1 1 12rem;
+}
+.shopping-add-feedback strong {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+.shopping-add-feedback p {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.shopping-add-feedback a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  color: var(--color-accent);
+  font-weight: 700;
+  text-underline-offset: 0.2rem;
+}
+.shopping-cart-page .commerce-cart-items {
+  padding-inline: clamp(1rem, 2.5vw, 1.5rem);
+  border: 1px solid var(--color-line);
+  background: #fff;
+}
+.shopping-cart-page .commerce-cart-item:last-child {
+  border-bottom: 0;
+}
+.shopping-cart-page .commerce-cart-item-body > p {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.shopping-cart-page .commerce-cart-item-heading {
+  align-items: start;
+}
+.shopping-cart-page .commerce-remove-button {
+  min-height: 2.75rem;
+  padding-inline: 0.75rem;
+  font-size: 0.85rem;
+}
+.shopping-quantity-stepper {
+  display: inline-grid;
+  grid-template-columns: 2.75rem 2.5rem 2.75rem;
+  align-items: center;
+  border: 1px solid var(--color-line);
+  border-radius: 0.25rem;
+  background: #fff;
+  overflow: hidden;
+}
+.shopping-quantity-stepper button {
+  display: grid;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.75rem;
+  line-height: 1;
+}
+.shopping-quantity-stepper button:hover:not(:disabled) {
+  background: #f2ede8;
+}
+.shopping-quantity-stepper button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.shopping-quantity-stepper button:disabled {
+  color: #a8a29e;
+  cursor: not-allowed;
+}
+.shopping-quantity-value {
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .shopping-product-link {
   display: inline-block;
   min-height: 2.75rem;

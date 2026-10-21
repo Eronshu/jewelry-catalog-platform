@@ -154,7 +154,13 @@ describe("local product to cart journey", () => {
     await click("Add to cart");
     await click("Add to cart");
     expect(document.querySelector('[role="status"]')?.textContent).toContain(
-      "Added Orbit",
+      "Added to your cart",
+    );
+    expect(document.querySelector('[role="status"]')?.textContent).toContain(
+      "2 in your cart",
+    );
+    expect(document.querySelector('[role="status"] a')?.textContent).toContain(
+      "View cart",
     );
     await navigate("/products/bar");
     await click("Add to cart");
@@ -242,31 +248,27 @@ describe("local product to cart journey", () => {
     await click("Add to cart");
     expect(stored()).toEqual([{ variantId: "gold", quantity: 1 }]);
   });
-  it("applies quantity edits on blur and keeps invalid edits from changing the saved cart", async () => {
+  it("uses side-by-side quantity arrows and respects stock boundaries", async () => {
     await mount();
     await click("Add to cart");
     await navigate("/cart");
-    let input = document.querySelector<HTMLInputElement>(
-      'input[type="number"]',
-    )!;
-    await act(async () => {
-      input.focus();
-      input.value = "3";
-      input.blur();
-    });
+    expect(button("Decrease quantity for Orbit — Gold-tone").disabled).toBe(
+      true,
+    );
+    await click("Increase quantity for Orbit — Gold-tone");
+    await click("Increase quantity for Orbit — Gold-tone");
     expect(stored()).toEqual([{ variantId: "gold", quantity: 3 }]);
     expect(
       document.querySelector('[aria-label="Cart summary"]')?.textContent,
     ).toContain("$75.00");
-    input = document.querySelector<HTMLInputElement>('input[type="number"]')!;
-    await act(async () => {
-      input.focus();
-      input.value = "21";
-      input.blur();
-    });
-    expect(stored()[0].quantity).toBe(3);
-    expect(input.value).toBe("3");
-    expect(document.body.textContent).toContain("Choose a whole quantity");
+    await click("Increase quantity for Orbit — Gold-tone");
+    expect(button("Increase quantity for Orbit — Gold-tone").disabled).toBe(
+      true,
+    );
+    await click("Decrease quantity for Orbit — Gold-tone");
+    expect(stored()).toEqual([{ variantId: "gold", quantity: 3 }]);
+    expect(document.querySelector('[role="group"]')?.textContent).toBe("‹3›");
+    expect(document.body.textContent).toContain("quantity updated to 3");
   });
   it("does not add more than the available stock", async () => {
     await mount();
