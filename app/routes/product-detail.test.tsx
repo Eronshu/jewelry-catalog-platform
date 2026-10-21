@@ -7,6 +7,11 @@ import { cloudflareContext } from "../cloudflare-context";
 import type { PublicProductDetail } from "../lib/db/catalog-types";
 import { getPublicProductBySlug } from "../lib/db/products.server";
 
+import { readShoppingVariants } from "../lib/commerce/shopping.server";
+vi.mock("../lib/commerce/shopping.server", () => ({
+  readShoppingVariants: vi.fn(),
+}));
+
 import ProductDetail, { loader, meta, ErrorBoundary } from "./product-detail";
 
 vi.mock("../lib/db/products.server", () => ({
@@ -54,6 +59,31 @@ function markup(data: Awaited<ReturnType<typeof loader>>) {
 }
 
 describe("public product detail", () => {
+  it("adds commerce data only for explicitly enabled loopback requests", async () => {
+    vi.mocked(getPublicProductBySlug).mockResolvedValue(saved);
+    vi.mocked(readShoppingVariants).mockResolvedValue([]);
+    for (const url of [
+      "https://example.com/products/test",
+      "http://127.0.0.1/products/test",
+    ]) {
+      const input = args();
+      input.request = new Request(url);
+      input.context.set(cloudflareContext, {
+        env: { DB: db, COMMERCE_MODE: "local-test" } as unknown as Env,
+        ctx: {} as ExecutionContext,
+      });
+      const result = await loader(input);
+      expect(result.shoppingVariants).toEqual(
+        url.startsWith("https") ? null : [],
+      );
+    }
+    expect(readShoppingVariants).toHaveBeenCalledTimes(1);
+    expect(readShoppingVariants).toHaveBeenCalledWith(db, {
+      productId: saved.product.id,
+    });
+    vi.mocked(readShoppingVariants).mockClear();
+  });
+
   it("loads only browser-safe fields and renders an ordered primary photo in initial HTML", async () => {
     vi.mocked(getPublicProductBySlug).mockResolvedValueOnce(saved);
     const data = await loader(args());

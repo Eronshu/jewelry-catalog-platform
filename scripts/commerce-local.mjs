@@ -4,12 +4,16 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2)
   throw new Error("No arguments supported: local fictional data only.");
 if (!existsSync(join(root, "build/server/index.js")))
   throw new Error("Run npm run build first.");
+const port = process.env.COMMERCE_LOCAL_PORT ?? "8791";
+if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535)
+  throw new Error("COMMERCE_LOCAL_PORT must be an integer from 1024 to 65535.");
 const directory = mkdtempSync(join(tmpdir(), "jewelry-commerce-local-"));
 const config = join(directory, "wrangler.json");
 const state = join(directory, "state");
@@ -25,6 +29,8 @@ writeFileSync(
       assets: {
         directory: join(root, "build/client"),
         run_worker_first: [
+          "/cart",
+          "/cart.data",
           "/commerce-lab",
           "/commerce-lab.data",
           "/admin",
@@ -68,7 +74,29 @@ function wrangler(args) {
     stdio: "inherit",
   });
 }
+function fixtureImageKey(id) {
+  return `products/${id}/00000000-0000-4000-8000-${String(id).padStart(12, "0")}.png`;
+}
 wrangler(["d1", "migrations", "apply", "DB", "--local", "--persist-to", state]);
+// Generated fixture illustrations, not merchant photographs or product claims.
+for (let id = 1; id <= 3; id++) {
+  const image = join(directory, `necklace-${id}.png`);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"><rect width="640" height="640" fill="#eee8dd"/><path d="M180 150 Q140 440 320 460 Q500 440 460 150" fill="none" stroke="#958473" stroke-width="8"/><circle cx="320" cy="490" r="${18 + id * 8}" fill="none" stroke="#958473" stroke-width="8"/></svg>`;
+  await sharp(Buffer.from(svg)).png().toFile(image);
+  wrangler([
+    "r2",
+    "object",
+    "put",
+    `commerce-fictional-images/${fixtureImageKey(id)}`,
+    "--local",
+    "--persist-to",
+    state,
+    "--file",
+    image,
+    "--content-type",
+    "image/png",
+  ]);
+}
 const seed = join(directory, "fictional.sql");
 const statements = [];
 for (const [index, name] of ["Orbit", "Bar", "Pendant"].entries()) {
@@ -77,7 +105,7 @@ for (const [index, name] of ["Orbit", "Bar", "Pendant"].entries()) {
     `INSERT INTO products(id,name,slug,price_cents,quantity,category_id,status,created_at,updated_at) VALUES (${id},'Fictional ${name} necklace','fictional-${index}',2500,0,1,'draft',1,1);`,
   );
   statements.push(
-    `INSERT INTO product_images(product_id,r2_key,sort_order,created_at) VALUES (${id},'fictional/not-an-image-${id}.jpg',0,1);`,
+    `INSERT INTO product_images(product_id,r2_key,sort_order,created_at) VALUES (${id},'${fixtureImageKey(id)}',0,1);`,
   );
   statements.push(`UPDATE products SET status='available' WHERE id=${id};`);
   for (const [colourIndex, colour] of [
@@ -115,7 +143,7 @@ wrangler([
   seed,
 ]);
 console.log(
-  `Fictional state preserved at: ${directory}\nOpen http://127.0.0.1:8791/commerce-lab\nCtrl-C stops the server. A new run creates a new database; no existing data is deleted.`,
+  `Fictional state preserved at: ${directory}\nShopping preview: http://127.0.0.1:${port}/products/fictional-0\nDeveloper lab: http://127.0.0.1:${port}/commerce-lab\nCtrl-C stops the server. A new run creates a new database; no existing data is deleted.`,
 );
 const server = spawn(
   process.execPath,
@@ -128,7 +156,9 @@ const server = spawn(
     "--ip",
     "127.0.0.1",
     "--port",
-    "8791",
+    port,
+    "--inspector-port",
+    "0",
     "--persist-to",
     state,
   ],

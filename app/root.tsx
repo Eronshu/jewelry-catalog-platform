@@ -13,6 +13,21 @@ import { AdminShell } from "./components/admin/admin-shell";
 import { SiteShell } from "./components/storefront/site-shell";
 import { isAdminPath } from "./lib/admin-path";
 import "./app.css";
+import { cloudflareContext } from "./cloudflare-context";
+import { isLocalCommerceEnabled } from "./lib/commerce/environment.server";
+import {
+  ShoppingCartProvider,
+  ShoppingNavigation,
+} from "./components/storefront/shopping-cart-context";
+
+export function loader({ request, context }: Route.LoaderArgs) {
+  return {
+    localShopping: isLocalCommerceEnabled(
+      request,
+      context.get(cloudflareContext).env,
+    ),
+  };
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -32,9 +47,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
+export default function App({ loaderData }: Route.ComponentProps) {
   const isAdmin = isAdminPath(useLocation().pathname);
   if (isAdmin) return <Outlet />;
+  if (loaderData?.localShopping === true)
+    return (
+      <ShoppingCartProvider>
+        <SiteShell>
+          <ShoppingNavigation />
+          <Outlet />
+        </SiteShell>
+      </ShoppingCartProvider>
+    );
   return (
     <SiteShell>
       <Outlet />

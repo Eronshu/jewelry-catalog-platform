@@ -13,4 +13,4 @@
 - Mobile Safari is a first-class supported platform.
 - Destructive production actions require explicit human approval.
 - Finish one reviewable task per feature branch: commit, open a PR, then wait for CI and review. Do not add the next task before that PR is reviewed and merged. Start the next task from updated main.
-- Preserve `codex/product-cart-local` as the commerce backup branch; do not merge or delete it directly. Follow `docs/COMMERCE_PR_SEQUENCE.md` for the existing commerce series. C09b stays paused until that series is merged.
+- Follow `docs/COMMERCE_PR_SEQUENCE.md` for the existing commerce series. Never merge the original backup as a shortcut. After all four PRs are reviewed, merged and checked for omissions, user-authorized cleanup may remove the backup and old branches/worktrees; archive unique commits and uncommitted files first. Create C09b from updated main only after the series is merged.
