@@ -120,6 +120,9 @@ export function CommerceCart({
   });
   const pending = navigation.state !== "idle";
   const itemCount = lines.reduce((total, line) => total + line.quantity, 0);
+  const incompleteSubtotal = lines.some(
+    (line) => !variants.some((variant) => variant.id === line.variantId),
+  );
   const estimatedSubtotal = lines.reduce((total, line) => {
     const variant = variants.find((item) => item.id === line.variantId);
     return total + (variant?.priceCents ?? 0) * line.quantity;
@@ -263,7 +266,11 @@ export function CommerceCart({
             <h3>Order summary</h3>
             <div className="commerce-estimate">
               <span>Subtotal ({itemCount} items)</span>
-              <strong>{money(estimatedSubtotal)}</strong>
+              <strong>
+                {incompleteSubtotal
+                  ? "Unavailable — review missing items"
+                  : money(estimatedSubtotal)}
+              </strong>
             </div>
             <p className="commerce-summary-hint">
               Delivery and tax appear in the test quote.
@@ -374,7 +381,7 @@ export function CommerceCart({
                 </p>
                 <button
                   className="commerce-add-button"
-                  aria-label={`Add ${variant.name} — ${variant.colour}`}
+                  aria-label={`Add to cart: ${variant.name} — ${variant.colour}`}
                   type="button"
                   disabled={!ready || !variant.active || variant.available < 1}
                   onClick={() => {

@@ -2224,3 +2224,35 @@ a {
     display: none;
   }
 }
+
+/* Only rendered by the explicitly enabled local customer-journey preview. */
+.shopping-preview-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--color-line);
+}
+.shopping-preview-nav a,
+.shopping-view-cart {
+  display: inline-block;
+  padding: 0.75rem;
+  min-height: 2.75rem;
+  text-decoration: underline;
+}
+.shopping-purchase {
+  display: grid;
+  gap: 1rem;
+}
+.shopping-purchase p {
+  margin: 0;
+}
+.shopping-product-link {
+  display: inline-block;
+  min-height: 2.75rem;
+}
+.shopping-thumb {
+  object-fit: contain;
+}

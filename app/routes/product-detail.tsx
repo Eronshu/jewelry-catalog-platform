@@ -11,9 +11,13 @@ import { formatCad } from "../lib/format-cad";
 import { productImageUrl } from "../lib/images/image-urls";
 import { safeFacebookUrl } from "../lib/safe-facebook-url";
 
+import { isLocalCommerceEnabled } from "../lib/commerce/environment.server";
+import { readShoppingVariants } from "../lib/commerce/shopping.server";
+import { ProductPurchase } from "../components/storefront/product-purchase";
+
 const unavailable = "Product catalog unavailable";
 
-export async function loader({ context, params }: Route.LoaderArgs) {
+export async function loader({ context, params, request }: Route.LoaderArgs) {
   const db = context.get(cloudflareContext).env.DB;
   let result: Awaited<ReturnType<typeof getPublicProductBySlug>>;
   try {
@@ -33,7 +37,22 @@ export async function loader({ context, params }: Route.LoaderArgs) {
     zoomUrl: productImageUrl(product.id, image.id, "zoom"),
   }));
 
+  const localShopping = isLocalCommerceEnabled(
+    request,
+    context.get(cloudflareContext).env,
+  );
+  let shoppingVariants = null;
+  if (localShopping) {
+    try {
+      shoppingVariants = await readShoppingVariants(db, {
+        productId: product.id,
+      });
+    } catch {
+      throw new Response(null, { status: 503, statusText: unavailable });
+    }
+  }
   return {
+    shoppingVariants,
     product: {
       name: product.name,
       priceCents: product.priceCents,
@@ -71,7 +90,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export default function ProductDetail({ loaderData }: Route.ComponentProps) {
-  const { product, gallery } = loaderData;
+  const { product, gallery, shoppingVariants } = loaderData;
   return (
     <div className="container product-detail">
       <nav aria-label="Breadcrumb" className="breadcrumb product-breadcrumb">
@@ -83,16 +102,22 @@ export default function ProductDetail({ loaderData }: Route.ComponentProps) {
         <ProductGallery name={product.name} images={gallery} />
         <div className="product-detail-info">
           <h1>{product.name}</h1>
-          <p className="product-detail-price">
-            {formatCad(product.priceCents)}
-          </p>
-          <p className="product-detail-status">
-            {product.status === "sold" ? "Sold Out" : "Available"}
-          </p>
+          {shoppingVariants == null ? (
+            <>
+              <p className="product-detail-price">
+                {formatCad(product.priceCents)}
+              </p>
+              <p className="product-detail-status">
+                {product.status === "sold" ? "Sold Out" : "Available"}
+              </p>
+            </>
+          ) : (
+            <ProductPurchase key={product.name} variants={shoppingVariants} />
+          )}
           {product.description ? (
             <p className="product-detail-description">{product.description}</p>
           ) : null}
-          {product.material || product.colour ? (
+          {product.material || (shoppingVariants == null && product.colour) ? (
             <dl className="product-detail-attributes">
               {product.material ? (
                 <>
@@ -100,7 +125,7 @@ export default function ProductDetail({ loaderData }: Route.ComponentProps) {
                   <dd>{product.material}</dd>
                 </>
               ) : null}
-              {product.colour ? (
+              {shoppingVariants == null && product.colour ? (
                 <>
                   <dt>Colour</dt>
                   <dd>{product.colour}</dd>

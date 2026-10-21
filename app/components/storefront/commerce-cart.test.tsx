@@ -145,6 +145,18 @@ afterEach(async () => {
 });
 
 describe("local test commerce cart", () => {
+  it("does not present a missing saved item as zero in a complete subtotal", async () => {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify([{ variantId: "missing", quantity: 1 }]),
+    );
+    await mount();
+    expect(document.querySelector(".commerce-estimate")?.textContent).toContain(
+      "Unavailable — review missing items",
+    );
+    expect(button("Get test quote").disabled).toBe(true);
+  });
+
   it("labels test assumptions, exposes sizes as text and disables an empty cart or sold-out colour", async () => {
     await mount();
     expect(
@@ -160,15 +172,15 @@ describe("local test commerce cart", () => {
     expect(document.body.textContent).toContain("Fictional 40 cm chain");
     expect(document.querySelectorAll("select")).toHaveLength(1);
     expect(button("Get test quote").disabled).toBe(true);
-    expect(button("Add Test necklace — Black").disabled).toBe(true);
+    expect(button("Add to cart: Test necklace — Black").disabled).toBe(true);
     expect(document.querySelector('input[name="address"]')).toBeNull();
   });
 
   it("adds separate colours, edits/removes quantities and persists only ids and quantities", async () => {
     await mount();
-    await click("Add Test necklace — Gold");
-    await click("Add Test necklace — Gold");
-    await click("Add Test necklace — Silver");
+    await click("Add to cart: Test necklace — Gold");
+    await click("Add to cart: Test necklace — Gold");
+    await click("Add to cart: Test necklace — Silver");
     expect(lines()).toEqual([
       { variantId: "gold", quantity: 2 },
       { variantId: "silver", quantity: 1 },
@@ -188,7 +200,7 @@ describe("local test commerce cart", () => {
 
   it("posts only intent, lines and delivery and displays amounts from the server quote", async () => {
     await mount();
-    await click("Add Test necklace — Gold");
+    await click("Add to cart: Test necklace — Gold");
     await act(async () => {
       const select = document.querySelector("select")!;
       select.value = "shipping";
@@ -205,7 +217,7 @@ describe("local test commerce cart", () => {
     expect(
       document.querySelector('[aria-label="Server test quote"]')?.textContent,
     ).toContain("34.95");
-    await click("Add Test necklace — Silver");
+    await click("Add to cart: Test necklace — Silver");
     expect(
       document.querySelector('[aria-label="Server test quote"]'),
     ).toBeNull();
@@ -300,7 +312,7 @@ describe("local test commerce cart", () => {
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
         "could not be loaded",
       );
-      await click("Add Test necklace — Gold");
+      await click("Add to cart: Test necklace — Gold");
       expect(lines()).toHaveLength(1);
     },
   );
@@ -330,7 +342,7 @@ describe("local test commerce cart", () => {
       throw new Error("denied");
     });
     await mount();
-    await click("Add Test necklace — Gold");
+    await click("Add to cart: Test necklace — Gold");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "cannot be saved",
     );
@@ -339,14 +351,14 @@ describe("local test commerce cart", () => {
 
   it("refuses invalid quantity and additions beyond available stock", async () => {
     await mount();
-    await click("Add Test necklace — Silver");
+    await click("Add to cart: Test necklace — Silver");
     await quantity("0");
     expect(lines()[0].quantity).toBe(1);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "whole quantity",
     );
-    await click("Add Test necklace — Silver");
-    await click("Add Test necklace — Silver");
+    await click("Add to cart: Test necklace — Silver");
+    await click("Add to cart: Test necklace — Silver");
     expect(lines()[0].quantity).toBe(2);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "not enough",
@@ -368,9 +380,9 @@ describe("local test commerce cart", () => {
       ),
     );
     await mount({ items: many });
-    await click("Add Test necklace — Colour 20");
+    await click("Add to cart: Test necklace — Colour 20");
     expect(lines()).toHaveLength(20);
-    await click("Add Test necklace — Colour 0");
+    await click("Add to cart: Test necklace — Colour 0");
     expect(lines()[0].quantity).toBe(20);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "at most 20",

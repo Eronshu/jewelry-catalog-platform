@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status (2026-10-20, PR 3): local-only developer cart, server quote and unpaid reservation prototype for route C. `/commerce-lab` is an internal harness; product-detail purchase controls and the separate customer cart belong to PR 4. No payment integration or permission to deploy. [The PR sequence](./COMMERCE_PR_SEQUENCE.md) governs the current integration; [the implementation plan](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) retains later acceptance gates.
+Status (2026-10-20, PR 4): C09a adds an isolated product-detail → customer cart preview. The separate developer lab still exercises server quotes and unpaid reservations. Neither is connected to provider payment or approved for deployment. [The PR sequence](./COMMERCE_PR_SEQUENCE.md) governs current integration; [the implementation plan](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) retains later acceptance gates.
 
 ## Availability policy
 
@@ -26,18 +26,26 @@ Run `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `np
 
 Remove the local test setting to disable availability; revert this foundation if needed without changing database state. Once payment attempts exist, a broader stop-sales mechanism must preserve callbacks, reconciliation and existing-order servicing: this local gate is not that operational switch.
 
-## Run the fictional local cart
+## Run the fictional shopping preview
 
 ```sh
 npm run build
 npm run commerce:local
 ```
 
-Open `http://127.0.0.1:8791/commerce-lab`. The runner creates a new OS temporary directory on every invocation, applies migrations **locally**, seeds three fictional necklace styles with three colours each, and serves the compiled Worker on loopback only. Gold-tone has 5 physical units with 1 reserved for Facebook (4 website units); silver has 5 website units; black is out of stock. Images are deliberately not real product assets.
+Open `http://127.0.0.1:8791/products/fictional-0`, select a colour, add items, then follow **View cart** to `/cart`. The runner creates a new OS temporary directory on every invocation, applies migrations **locally**, seeds three fictional necklace styles with three colours each, and serves the compiled Worker on loopback only. Gold-tone has 5 physical units with 1 reserved for Facebook (4 website units); silver has 5 website units; black is out of stock. Generated fixture illustrations use local R2 and the normal validated image route; they are not merchant photographs.
+
+If the port is occupied, preserve the existing process and run `COMMERCE_LOCAL_PORT=8792 npm run commerce:local`. The override accepts ports 1024–65535 and keeps the loopback binding. Stop/restart your own runner after rebuilding assets.
+
+The customer cart saves only variant IDs and integer quantities under `velaform-shopping-preview-cart-v1`; it does not reuse the lab's browser storage. Reload/back-navigation restores selections; unavailable storage falls back to the current visit with a warning. Quantities apply on blur or Enter. The server resolves exact IDs, current variant prices and website availability; client-supplied prices or extra fields are discarded. Hidden/deleted products do not leak metadata and make the subtotal unavailable. Inactive or insufficient-stock lines require correction. Fetch failures/stale responses cannot supply a current subtotal; use **Refresh prices and availability** to retry.
+
+This is an item subtotal, not a final quote: no delivery, tax, address, customer identity, reservation or order is created by `/cart`. Cart reads do not reduce inventory. Two tabs do not currently synchronize changes. Local-only purchase controls appear on the existing product route; the default public site has no purchase controls and `/cart` is unavailable.
 
 The temporary Wrangler configuration has no remote IDs or preview configuration. The child environment uses an allowlist without inherited API credentials, disables dotenv loading and telemetry, and uses temporary config/state paths. The runner does not modify repository bindings or read merchant accounts. Do not expose the port through a public proxy. Do not reuse this test configuration for Sandbox callbacks or deployment.
 
-Add items, request a server quote, reserve, refresh to recover the same browser session's recent orders, then cancel to release stock. Prices, shipping fees and zero tax are fictional. No payment button or provider is connected. Orders are unpaid test records; stock is held atomically and cancellations release only the order's own lines.
+### Separate developer lab
+
+Open `/commerce-lab` explicitly. It remains an internal quote/reservation harness, not the future customer checkout page. Add items, request a server quote, reserve, refresh to recover the same browser session's recent orders, then cancel to release stock. Prices, shipping fees and zero tax are fictional. No payment button or provider is connected. Orders are unpaid test records; stock is held atomically and cancellations release only the order's own lines.
 
 The internal expiry command is tested, but **no automatic expiry job runs yet**. The page says so: cancel unpaid reservations manually. Only the latest 20 session orders are listed; session cookie loss prevents accessing previous reservations through this UI. The next runner invocation starts a separate fresh test database. Production cleanup, recovery and order search are not implemented by this prototype.
 

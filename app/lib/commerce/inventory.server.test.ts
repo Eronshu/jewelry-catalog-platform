@@ -6,6 +6,8 @@ import { getPlatformProxy, type PlatformProxy } from "wrangler";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyStockCommand, listCommerceVariants } from "./inventory.server";
 
+import { readShoppingVariants, resolveShoppingCart } from "./shopping.server";
+
 const root = resolve(process.cwd());
 let localDir: string;
 let platform: PlatformProxy<Env>;
@@ -85,6 +87,81 @@ afterAll(async () => {
 });
 
 describe("isolated commerce stock on migrated D1", () => {
+  it("resolves shopping data from current variants without reserving stock or creating orders", async () => {
+    const item = await variant(5);
+    await applyStockCommand(db, id("shopping-fb"), [
+      {
+        variantId: item.variantId,
+        kind: "fb_reserve",
+        quantity: 1,
+        reason: "Facebook shelf",
+      },
+    ]);
+    const before = await balance(item.variantId);
+    const variants = await readShoppingVariants(db, {
+      productId: item.productId,
+    });
+    expect(variants).toEqual([
+      expect.objectContaining({
+        id: item.variantId,
+        priceCents: 2500,
+        available: 4,
+        active: true,
+        productId: item.productId,
+      }),
+    ]);
+    expect(variants[0].imageId).toBeTypeOf("number");
+    const summary = await resolveShoppingCart(db, [
+      { variantId: item.variantId, quantity: 2, priceCents: 1 },
+    ]);
+    expect(summary.subtotalCents).toBe(5000);
+    expect(summary.key).not.toContain("priceCents");
+    expect(await balance(item.variantId)).toEqual(before);
+    expect(
+      await db
+        .prepare("SELECT COUNT(*) AS count FROM commerce_orders")
+        .first("count"),
+    ).toBe(0);
+    await db
+      .prepare("UPDATE products SET status = 'hidden' WHERE id = ?")
+      .bind(item.productId)
+      .run();
+    const hidden = await resolveShoppingCart(db, [
+      { variantId: item.variantId, quantity: 1 },
+    ]);
+    expect(hidden.items[0].variant).toBeNull();
+    expect(hidden.subtotalCents).toBeNull();
+  });
+
+  it("keeps sold or deactivated variants visible but unavailable in saved carts", async () => {
+    const item = await variant();
+    await db
+      .prepare(
+        "UPDATE commerce_variants SET active = 0, version = version + 1 WHERE id = ?",
+      )
+      .bind(item.variantId)
+      .run();
+    expect(
+      (await readShoppingVariants(db, { ids: [item.variantId] }))[0].active,
+    ).toBe(false);
+    await db
+      .prepare(
+        "UPDATE commerce_variants SET active = 1, version = version + 1 WHERE id = ?",
+      )
+      .bind(item.variantId)
+      .run();
+    await db
+      .prepare("UPDATE products SET status = 'sold' WHERE id = ?")
+      .bind(item.productId)
+      .run();
+    expect(
+      (await readShoppingVariants(db, { ids: [item.variantId] }))[0].active,
+    ).toBe(false);
+    await expect(
+      resolveShoppingCart(db, [{ variantId: item.variantId, quantity: 0 }]),
+    ).rejects.toThrow("Invalid cart");
+  });
+
   it("keeps one Facebook unit separate and never automatically replenishes it", async () => {
     const { variantId } = await variant();
     await applyStockCommand(db, id("fbhold"), [
