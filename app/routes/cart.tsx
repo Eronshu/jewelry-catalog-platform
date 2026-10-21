@@ -285,6 +285,20 @@ export default function ShoppingCart() {
                 Delivery and tax are not calculated yet. This is not a final
                 quote. Items in your cart are not reserved.
               </p>
+              {result &&
+                result.subtotalCents !== null &&
+                result.items.every(
+                  (item) =>
+                    item.variant?.active &&
+                    item.variant.available >= item.quantity,
+                ) && (
+                  <Link
+                    className="commerce-primary-button checkout-link"
+                    to="/checkout"
+                  >
+                    Review delivery (local test)
+                  </Link>
+                )}
               <button
                 className="commerce-secondary-button"
                 type="button"
