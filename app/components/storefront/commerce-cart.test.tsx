@@ -101,7 +101,8 @@ async function mount(
 
 function button(text: string) {
   const found = [...document.querySelectorAll("button")].find(
-    (item) => item.textContent === text,
+    (item) =>
+      item.textContent === text || item.getAttribute("aria-label") === text,
   );
   expect(found, text).toBeTruthy();
   return found!;
@@ -146,6 +147,13 @@ afterEach(async () => {
 describe("local test commerce cart", () => {
   it("labels test assumptions, exposes sizes as text and disables an empty cart or sold-out colour", async () => {
     await mount();
+    expect(
+      document
+        .querySelector(".commerce-cart-panel")!
+        .compareDocumentPosition(document.querySelector(".commerce-catalog")!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain("Your bag is empty");
     expect(document.body.textContent).toContain(
       "Local test only — fictional fees and tax. No payment is taken.",
     );

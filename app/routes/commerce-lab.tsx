@@ -159,45 +159,61 @@ export default function CommerceLab({
       ]
     : loaderData.orders;
   return (
-    <div className="container space-y-6">
-      <h1>Local commerce test</h1>
-      <p>
-        This isolated prototype uses fictional products and delivery fees. No
-        payment service is connected. Reservations are test data only.
-      </p>
-      <CommerceCart
-        variants={loaderData.variants}
-        quote={result?.quote}
-        quoteId={result?.quoteId}
-        error={result?.error}
-      />
-      <p>
-        Recent reservations for this browser session (up to 20). This local
-        prototype does not run an automatic expiry job. Cancel unpaid
-        reservations here to release test stock; the deadline alone does not
-        release it. Clearing cookies loses access.
-      </p>
-      {orders.map((order) => (
-        <section key={order.id} aria-label="Test order" role="status">
-          <h2>Test order {order.id}</h2>
+    <div className="commerce-page">
+      <div className="container">
+        <header className="commerce-intro">
+          <p className="commerce-kicker">Local shopping test</p>
+          <h1>Your bag</h1>
           <p>
-            Order: {order.state}. Payment: {order.paymentState}. Fulfillment:{" "}
-            {order.fulfillment}.
+            A private demo with fictional items. You can try adding items and
+            checking a total, but no payment or real order is possible.
           </p>
+        </header>
+        <CommerceCart
+          variants={loaderData.variants}
+          quote={result?.quote}
+          quoteId={result?.quoteId}
+          error={result?.error}
+        />
+        <div className="commerce-reservations">
+          <h2>Recent test reservations</h2>
           <p>
-            Reservation deadline: {new Date(order.reserveUntil).toISOString()}.
-            No payment was taken.
+            Recent reservations for this browser session (up to 20). This local
+            prototype does not run an automatic expiry job. Cancel unpaid
+            reservations here to release test stock; the deadline alone does not
+            release it. Clearing cookies loses access.
           </p>
-          {order.state === "pending_payment" &&
-          order.paymentState === "not_started" ? (
-            <Form method="post">
-              <input type="hidden" name="intent" value="cancel" />
-              <input type="hidden" name="orderId" value={order.id} />
-              <button type="submit">Cancel this unpaid test reservation</button>
-            </Form>
-          ) : null}
-        </section>
-      ))}
+          {orders.map((order) => (
+            <section
+              className="commerce-reservation"
+              key={order.id}
+              aria-label="Test order"
+              role="status"
+            >
+              <h2>Test order {order.id}</h2>
+              <p>
+                Order: {order.state}. Payment: {order.paymentState}.
+                Fulfillment: {order.fulfillment}.
+              </p>
+              <p>
+                Reservation deadline:{" "}
+                {new Date(order.reserveUntil).toISOString()}. No payment was
+                taken.
+              </p>
+              {order.state === "pending_payment" &&
+              order.paymentState === "not_started" ? (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="cancel" />
+                  <input type="hidden" name="orderId" value={order.id} />
+                  <button className="commerce-secondary-button" type="submit">
+                    Cancel this unpaid test reservation
+                  </button>
+                </Form>
+              ) : null}
+            </section>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

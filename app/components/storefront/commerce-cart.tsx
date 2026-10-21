@@ -119,6 +119,11 @@ export function CommerceCart({
     return !variant || !variant.active || variant.available < line.quantity;
   });
   const pending = navigation.state !== "idle";
+  const itemCount = lines.reduce((total, line) => total + line.quantity, 0);
+  const estimatedSubtotal = lines.reduce((total, line) => {
+    const variant = variants.find((item) => item.id === line.variantId);
+    return total + (variant?.priceCents ?? 0) * line.quantity;
+  }, 0);
   const quoteMatches =
     !!quote &&
     quote !== staleQuote &&
@@ -137,198 +142,283 @@ export function CommerceCart({
     });
 
   return (
-    <section aria-labelledby={`${prefix}-heading`} className="space-y-6">
-      <h2 id={`${prefix}-heading`}>Local test cart</h2>
-      <p>Local test only — fictional fees and tax. No payment is taken.</p>
-      <p>
-        Your device saves only the selected test items and quantities. Stock is
-        checked again by the server; a quote does not reserve it.
-      </p>
-      <ul className="space-y-4" aria-label="Test products">
-        {variants.map((variant) => (
-          <li key={variant.id}>
-            <h3>
-              {variant.name} — {variant.colour}
-            </h3>
-            <p>{money(variant.priceCents)} CAD</p>
-            <p>{variant.sizeDescription}</p>
-            <button
-              type="button"
-              disabled={!ready || !variant.active || variant.available < 1}
-              onClick={() => {
-                const existing = lines.find(
-                  (line) => line.variantId === variant.id,
+    <section aria-labelledby={`${prefix}-heading`} className="commerce-layout">
+      <div className="commerce-cart-panel">
+        <div className="commerce-section-heading commerce-cart-heading">
+          <div>
+            <p className="commerce-kicker">Shopping bag</p>
+            <h2 id={`${prefix}-heading`}>
+              Items in your bag <span>({itemCount})</span>
+            </h2>
+          </div>
+        </div>
+        <p className="commerce-panel-note">
+          Local test only — fictional fees and tax. No payment is taken.
+        </p>
+        <Form method="post" className="commerce-quote-form">
+          <input type="hidden" name="intent" value="quote" />
+          <input type="hidden" name="lines" value={JSON.stringify(lines)} />
+          <div className="commerce-bag-items">
+            {!ready && <p role="status">Loading your test cart…</p>}
+            {ready && lines.length === 0 && (
+              <div className="commerce-empty-cart">
+                <h3>Your bag is empty</h3>
+                <p>Choose a test item below to try the cart.</p>
+                <a href="#test-items">Browse test items</a>
+              </div>
+            )}
+            <ul aria-label="Cart items" className="commerce-cart-items">
+              {lines.map((line, index) => {
+                const variant = variants.find(
+                  (item) => item.id === line.variantId,
                 );
-                if (
-                  (!existing && lines.length >= 20) ||
-                  (existing && existing.quantity >= 20)
-                ) {
-                  setLocalError(
-                    "A test cart can contain at most 20 items, with 20 units of each.",
-                  );
-                  return;
-                }
-                if ((existing?.quantity ?? 0) + 1 > variant.available) {
-                  setLocalError(
-                    "There is not enough available stock for that quantity.",
-                  );
-                  return;
-                }
-                changeLines(
-                  existing
-                    ? lines.map((line) =>
-                        line.variantId === variant.id
-                          ? { ...line, quantity: line.quantity + 1 }
-                          : line,
-                      )
-                    : [...lines, { variantId: variant.id, quantity: 1 }],
+                const label = variant
+                  ? `${variant.name} — ${variant.colour}`
+                  : "Unavailable item";
+                const insufficient =
+                  !variant ||
+                  !variant.active ||
+                  variant.available < line.quantity;
+                return (
+                  <li key={line.variantId} className="commerce-cart-item">
+                    <div className="commerce-cart-thumb" aria-hidden="true">
+                      <span className="commerce-product-art-mark" />
+                    </div>
+                    <div className="commerce-cart-item-body">
+                      <div className="commerce-cart-item-heading">
+                        <p>{label}</p>
+                        <strong>
+                          {variant
+                            ? money(variant.priceCents * line.quantity)
+                            : "—"}
+                        </strong>
+                      </div>
+                      <div className="commerce-cart-item-controls">
+                        <label htmlFor={`${prefix}-quantity-${index}`}>
+                          Quantity for {label}
+                        </label>
+                        <input
+                          className="commerce-quantity"
+                          id={`${prefix}-quantity-${index}`}
+                          type="number"
+                          min="1"
+                          max="20"
+                          step="1"
+                          value={line.quantity}
+                          aria-invalid={insufficient || undefined}
+                          aria-describedby={
+                            insufficient
+                              ? `${prefix}-stock-${index}`
+                              : undefined
+                          }
+                          onChange={(event) => {
+                            const quantity = event.currentTarget.valueAsNumber;
+                            if (
+                              !Number.isSafeInteger(quantity) ||
+                              quantity < 1 ||
+                              quantity > 20
+                            ) {
+                              setLocalError(
+                                "Choose a whole quantity from 1 to 20, or remove the item.",
+                              );
+                              return;
+                            }
+                            changeLines(
+                              lines.map((item) =>
+                                item.variantId === line.variantId
+                                  ? { ...item, quantity }
+                                  : item,
+                              ),
+                            );
+                          }}
+                        />
+                        {insufficient && (
+                          <p id={`${prefix}-stock-${index}`}>
+                            Not enough available stock. Reduce the quantity or
+                            remove this item.
+                          </p>
+                        )}
+                        <button
+                          className="commerce-remove-button"
+                          aria-label={`Remove ${label}`}
+                          type="button"
+                          onClick={() =>
+                            changeLines(
+                              lines.filter(
+                                (item) => item.variantId !== line.variantId,
+                              ),
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </li>
                 );
+              })}
+            </ul>
+          </div>
+          <div className="commerce-summary">
+            <h3>Order summary</h3>
+            <div className="commerce-estimate">
+              <span>Subtotal ({itemCount} items)</span>
+              <strong>{money(estimatedSubtotal)}</strong>
+            </div>
+            <p className="commerce-summary-hint">
+              Delivery and tax appear in the test quote.
+            </p>
+            <label htmlFor={`${prefix}-delivery`}>Delivery method</label>
+            <select
+              className="commerce-delivery"
+              id={`${prefix}-delivery`}
+              name="delivery"
+              value={delivery}
+              onChange={(event) => {
+                setDelivery(event.currentTarget.value as DeliveryMethod);
+                setStaleQuote(quote);
               }}
             >
-              Add {variant.name} — {variant.colour}
+              <option value="pickup">Pickup</option>
+              <option value="local_delivery">Local delivery</option>
+              <option value="shipping">Shipping within Canada</option>
+            </select>
+            <button
+              className="commerce-primary-button"
+              type="submit"
+              disabled={!ready || !lines.length || unavailable || pending}
+            >
+              {pending ? "Getting test quote…" : "Get test quote"}
             </button>
-            {(!variant.active || variant.available < 1) && (
-              <p>Currently unavailable</p>
+            <p className="commerce-small-print">
+              Your device saves only selected test items and quantities. The
+              server checks stock again; a quote does not reserve it.
+            </p>
+          </div>
+        </Form>
+        {(error || localError) && (
+          <p className="commerce-alert" role="alert">
+            {localError || error}
+          </p>
+        )}
+        {quote && !quoteMatches && (
+          <p role="status">
+            The previous quote is no longer current. Request a new test quote.
+          </p>
+        )}
+        {quoteMatches && !pending && !error && (
+          <section
+            className="commerce-server-quote"
+            aria-label="Server test quote"
+            aria-live="polite"
+          >
+            <h3>Server test quote (CAD)</h3>
+            <ul>
+              {quote.lines.map((line) => (
+                <li key={line.variantId}>
+                  {line.name} — {line.colour}: {line.quantity} ×{" "}
+                  {money(line.unitPriceCents)} = {money(line.lineTotalCents)}
+                </li>
+              ))}
+            </ul>
+            <dl className="commerce-totals">
+              <dt>Items</dt>
+              <dd>{money(quote.subtotalCents)}</dd>
+              <dt>Fictional delivery fee</dt>
+              <dd>{money(quote.shippingCents)}</dd>
+              <dt>Fictional tax</dt>
+              <dd>{money(quote.taxCents)}</dd>
+              <dt>Total</dt>
+              <dd>{money(quote.totalCents)}</dd>
+            </dl>
+            <p>
+              Quote valid until{" "}
+              {new Date(quote.expiresAt).toLocaleTimeString("en-CA")}. No stock
+              has been reserved.
+            </p>
+            {quoteId && (
+              <Form method="post">
+                <input type="hidden" name="intent" value="reserve" />
+                <input type="hidden" name="quoteId" value={quoteId} />
+                <p>This only reserves test stock. No payment is taken.</p>
+                <button className="commerce-primary-button" type="submit">
+                  Reserve quoted items (test only)
+                </button>
+              </Form>
             )}
-          </li>
-        ))}
-      </ul>
-      {!ready && <p role="status">Loading your test cart…</p>}
-      {ready && lines.length === 0 && <p>Your test cart is empty.</p>}
-      <Form method="post" className="space-y-4">
-        <input type="hidden" name="intent" value="quote" />
-        <input type="hidden" name="lines" value={JSON.stringify(lines)} />
-        <ul aria-label="Cart items" className="space-y-4">
-          {lines.map((line, index) => {
-            const variant = variants.find((item) => item.id === line.variantId);
-            const label = variant
-              ? `${variant.name} — ${variant.colour}`
-              : "Unavailable item";
-            const insufficient =
-              !variant || !variant.active || variant.available < line.quantity;
-            return (
-              <li key={line.variantId}>
-                <p>{label}</p>
-                <label htmlFor={`${prefix}-quantity-${index}`}>
-                  Quantity for {label}
-                </label>
-                <input
-                  id={`${prefix}-quantity-${index}`}
-                  type="number"
-                  min="1"
-                  max="20"
-                  step="1"
-                  value={line.quantity}
-                  aria-invalid={insufficient || undefined}
-                  aria-describedby={
-                    insufficient ? `${prefix}-stock-${index}` : undefined
-                  }
-                  onChange={(event) => {
-                    const quantity = event.currentTarget.valueAsNumber;
+          </section>
+        )}
+      </div>
+      <div className="commerce-catalog" id="test-items">
+        <div className="commerce-section-heading">
+          <div>
+            <p className="commerce-kicker">Continue browsing</p>
+            <h2>Add a test item</h2>
+          </div>
+          <p>Fictional stock for the local demo</p>
+        </div>
+        <ul className="commerce-product-grid" aria-label="Test products">
+          {variants.map((variant) => (
+            <li key={variant.id} className="commerce-product-card">
+              <div className="commerce-product-art" aria-hidden="true">
+                <span className="commerce-product-art-mark" />
+              </div>
+              <div className="commerce-product-copy">
+                <p className="commerce-product-colour">{variant.colour}</p>
+                <h3>{variant.name}</h3>
+                <p className="commerce-product-size">
+                  {variant.sizeDescription}
+                </p>
+                <p className="commerce-product-price">
+                  {money(variant.priceCents)} CAD
+                </p>
+                <button
+                  className="commerce-add-button"
+                  aria-label={`Add ${variant.name} — ${variant.colour}`}
+                  type="button"
+                  disabled={!ready || !variant.active || variant.available < 1}
+                  onClick={() => {
+                    const existing = lines.find(
+                      (line) => line.variantId === variant.id,
+                    );
                     if (
-                      !Number.isSafeInteger(quantity) ||
-                      quantity < 1 ||
-                      quantity > 20
+                      (!existing && lines.length >= 20) ||
+                      (existing && existing.quantity >= 20)
                     ) {
                       setLocalError(
-                        "Choose a whole quantity from 1 to 20, or remove the item.",
+                        "A test cart can contain at most 20 items, with 20 units of each.",
+                      );
+                      return;
+                    }
+                    if ((existing?.quantity ?? 0) + 1 > variant.available) {
+                      setLocalError(
+                        "There is not enough available stock for that quantity.",
                       );
                       return;
                     }
                     changeLines(
-                      lines.map((item) =>
-                        item.variantId === line.variantId
-                          ? { ...item, quantity }
-                          : item,
-                      ),
+                      existing
+                        ? lines.map((line) =>
+                            line.variantId === variant.id
+                              ? { ...line, quantity: line.quantity + 1 }
+                              : line,
+                          )
+                        : [...lines, { variantId: variant.id, quantity: 1 }],
                     );
                   }}
-                />
-                {insufficient && (
-                  <p id={`${prefix}-stock-${index}`}>
-                    Not enough available stock. Reduce the quantity or remove
-                    this item.
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    changeLines(
-                      lines.filter((item) => item.variantId !== line.variantId),
-                    )
-                  }
                 >
-                  Remove {label}
+                  {variant.active && variant.available > 0
+                    ? "Add to cart"
+                    : "Unavailable"}
                 </button>
-              </li>
-            );
-          })}
+                {(!variant.active || variant.available < 1) && (
+                  <p className="commerce-stock-note">Currently unavailable</p>
+                )}
+              </div>
+            </li>
+          ))}
         </ul>
-        <label htmlFor={`${prefix}-delivery`}>
-          Delivery method for test quote
-        </label>
-        <select
-          id={`${prefix}-delivery`}
-          name="delivery"
-          value={delivery}
-          onChange={(event) => {
-            setDelivery(event.currentTarget.value as DeliveryMethod);
-            setStaleQuote(quote);
-          }}
-        >
-          <option value="pickup">Pickup</option>
-          <option value="local_delivery">Local delivery</option>
-          <option value="shipping">Shipping within Canada</option>
-        </select>
-        <button
-          type="submit"
-          disabled={!ready || !lines.length || unavailable || pending}
-        >
-          {pending ? "Getting test quote…" : "Get test quote"}
-        </button>
-      </Form>
-      {(error || localError) && <p role="alert">{localError || error}</p>}
-      {quote && !quoteMatches && (
-        <p role="status">
-          The previous quote is no longer current. Request a new test quote.
-        </p>
-      )}
-      {quoteMatches && !pending && !error && (
-        <section aria-label="Server test quote" aria-live="polite">
-          <h3>Server test quote (CAD)</h3>
-          <ul>
-            {quote.lines.map((line) => (
-              <li key={line.variantId}>
-                {line.name} — {line.colour}: {line.quantity} ×{" "}
-                {money(line.unitPriceCents)} = {money(line.lineTotalCents)}
-              </li>
-            ))}
-          </ul>
-          <dl>
-            <dt>Items</dt>
-            <dd>{money(quote.subtotalCents)}</dd>
-            <dt>Fictional delivery fee</dt>
-            <dd>{money(quote.shippingCents)}</dd>
-            <dt>Fictional tax</dt>
-            <dd>{money(quote.taxCents)}</dd>
-            <dt>Total</dt>
-            <dd>{money(quote.totalCents)}</dd>
-          </dl>
-          <p>
-            Quote valid until{" "}
-            {new Date(quote.expiresAt).toLocaleTimeString("en-CA")}. No stock
-            has been reserved.
-          </p>
-          {quoteId && (
-            <Form method="post">
-              <input type="hidden" name="intent" value="reserve" />
-              <input type="hidden" name="quoteId" value={quoteId} />
-              <p>This only reserves test stock. No payment is taken.</p>
-              <button type="submit">Reserve quoted items (test only)</button>
-            </Form>
-          )}
-        </section>
-      )}
+      </div>
     </section>
   );
 }
