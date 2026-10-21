@@ -7,6 +7,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyStockCommand, listCommerceVariants } from "./inventory.server";
 
 import { readShoppingVariants, resolveShoppingCart } from "./shopping.server";
+import {
+  FICTIONAL_CHECKOUT_RULES,
+  quoteLocalCheckout,
+} from "./checkout-quote.server";
 
 const root = resolve(process.cwd());
 let localDir: string;
@@ -87,6 +91,95 @@ afterAll(async () => {
 });
 
 describe("isolated commerce stock on migrated D1", () => {
+  it("quotes delivery from migrated D1 without saving personal data, quotes, orders or stock changes", async () => {
+    const item = await variant(5);
+    await applyStockCommand(db, id("delivery-fb"), [
+      {
+        variantId: item.variantId,
+        kind: "fb_reserve",
+        quantity: 1,
+        reason: "Fictional Facebook shelf",
+      },
+    ]);
+    const input = {
+      contractVersion: "local-checkout-v1",
+      requestId: "11111111-1111-4111-8111-111111111111",
+      lines: [{ variantId: item.variantId, quantity: 4, priceCents: 1 }],
+      contact: {
+        name: "Fictional Customer",
+        email: "customer@example.invalid",
+      },
+      delivery: {
+        method: "shipping",
+        address: {
+          line1: "100 Fictional Test Street",
+          city: "Test City",
+          province: "ON",
+          postalCode: "K1A 0B1",
+          country: "CA",
+        },
+      },
+    };
+    const history = () =>
+      db
+        .prepare(
+          `SELECT
+      (SELECT COUNT(*) FROM commerce_quotes) AS quotes,
+      (SELECT COUNT(*) FROM commerce_orders) AS orders,
+      (SELECT COUNT(*) FROM commerce_commands) AS commands,
+      (SELECT COUNT(*) FROM commerce_stock_movements) AS movements`,
+        )
+        .first();
+    const before = await balance(item.variantId);
+    const beforeHistory = await history();
+    const quote = await quoteLocalCheckout(
+      db,
+      input,
+      FICTIONAL_CHECKOUT_RULES,
+      1_800_000_000_000,
+    );
+    expect(quote).toMatchObject({
+      subtotalCents: 10000,
+      shippingCents: 1500,
+      taxCents: 1150,
+      totalCents: 12650,
+    });
+    await expect(
+      quoteLocalCheckout(
+        db,
+        { ...input, lines: [{ variantId: item.variantId, quantity: 5 }] },
+        FICTIONAL_CHECKOUT_RULES,
+      ),
+    ).rejects.toMatchObject({ code: "INSUFFICIENT_STOCK" });
+    await db
+      .prepare(
+        "UPDATE commerce_variants SET price_cents = 3000, version = version + 1 WHERE id = ?",
+      )
+      .bind(item.variantId)
+      .run();
+    expect(
+      (await quoteLocalCheckout(db, input, FICTIONAL_CHECKOUT_RULES))
+        .subtotalCents,
+    ).toBe(12000);
+    await db
+      .prepare(
+        "UPDATE commerce_variants SET active = 0, version = version + 1 WHERE id = ?",
+      )
+      .bind(item.variantId)
+      .run();
+    await expect(
+      quoteLocalCheckout(db, input, FICTIONAL_CHECKOUT_RULES),
+    ).rejects.toMatchObject({ code: "UNAVAILABLE_VARIANT" });
+    await db
+      .prepare("UPDATE products SET status = 'hidden' WHERE id = ?")
+      .bind(item.productId)
+      .run();
+    await expect(
+      quoteLocalCheckout(db, input, FICTIONAL_CHECKOUT_RULES),
+    ).rejects.toMatchObject({ code: "UNAVAILABLE_VARIANT" });
+    expect(await balance(item.variantId)).toEqual(before);
+    expect(await history()).toEqual(beforeHistory);
+  });
   it("resolves shopping data from current variants without reserving stock or creating orders", async () => {
     const item = await variant(5);
     await applyStockCommand(db, id("shopping-fb"), [

@@ -4,6 +4,7 @@ export default [
   index("routes/home.tsx"),
   route("shop", "routes/shop.tsx"),
   route("cart", "routes/cart.tsx"),
+  route("checkout/quote", "routes/checkout-quote.ts"),
   route("commerce-lab", "routes/commerce-lab.tsx"),
   route("shop/page", "routes/shop-page.ts"),
   route("products/:slug", "routes/product-detail.tsx"),
