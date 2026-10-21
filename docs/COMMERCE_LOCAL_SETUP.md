@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status (2026-10-19): local-only cart, server quote and unpaid reservation prototype for route C. No payment integration or permission to deploy. [The implementation plan](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) still governs dependencies and acceptance.
+Status (2026-10-20, PR 3): local-only developer cart, server quote and unpaid reservation prototype for route C. `/commerce-lab` is an internal harness; product-detail purchase controls and the separate customer cart belong to PR 4. No payment integration or permission to deploy. [The PR sequence](./COMMERCE_PR_SEQUENCE.md) governs the current integration; [the implementation plan](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) retains later acceptance gates.
 
 ## Availability policy
 

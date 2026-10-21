@@ -47,4 +47,4 @@ V1 是目录站的历史规格，第 40 节“不含结账”等边界仍描述 
 
 若无法落实维护人、实际费用超出预算、库存/支付关键不变量不能通过测试、小姨无法独立完成 UAT，或账户/产品资格无法支持必需支付方式，则暂停进入下一门槛并重新比较缩减范围或 A/B。改变已选架构要另记决策并说明迁移代价；不得在任务列表中悄悄恢复“Shopify 优先”。
 
-下一步是实施方案的 **C01 模型与安全契约**，不是注册支付账户或制作付款按钮。全部后续实现以 [需求](./ONLINE_SALES_REQUIREMENTS.md)、[审查](./COMMERCE_READINESS_REVIEW.md) 和 [任务顺序](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 为依据。
+初始 C01 设计和部分本地基础已完成，当前按 [四组 PR 顺序](./COMMERCE_PR_SEQUENCE.md) 整合保存成果；C09b 暂停，不能重新从注册账户或付款按钮开始。全部后续实现以 [需求](./ONLINE_SALES_REQUIREMENTS.md)、[审查](./COMMERCE_READINESS_REVIEW.md) 和 [任务顺序](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 为依据。

@@ -20,8 +20,9 @@
 ## 当前进度
 
 - PR 1 [#31](https://github.com/Eronshu/jewelry-catalog-platform/pull/31) 已合并为 `703d1d8`；对应 head `108c82f` 的 CI 成功，独立 Codex 审查完成、无发现、无未解决讨论。自动审批最初未识别审查回执；核对同一 head 的回执后合并获准，没有绕过审批。
-- PR 2 从更新后的 `main` 建立 `codex/commerce-pr-02-inventory`，复用 `314872a` 的模型/迁移/测试，不带购物页面。本地 329 项应用测试、6 项付款模拟测试通过；远程 CI、独立审查及合并仍为当前 PR 的门槛。
-- PR 3/4 尚未开始，C09b 保持暂停；完整备份仍为 `73bc43e`。
+- PR 2 [#32](https://github.com/Eronshu/jewelry-catalog-platform/pull/32) 已合并为 `3a5200c`；对应 head `cd75d5c` 的 CI 成功，独立 Codex 审查完成、无发现、无未解决讨论。本地 329 项应用测试、6 项付款模拟测试通过。
+- PR 3 从更新后的 `main` 建立 `codex/commerce-pr-03-local-flow`，复用 `c7b8d00`、`1b8dede`、`dabc8f6`，只接入隔离开发流程。本地 368 项应用测试、6 项付款模拟测试、格式/lint/typecheck/构建通过；远程 CI、独立审查及合并仍为此 PR 的门槛。实现代码与原 `dabc8f6` 一致，文档更新为本次整合状态，没有重新生成该功能。
+- PR 4 尚未开始，C09b 保持暂停；完整备份仍为 `73bc43e`。四组全部合并后先核对未遗漏的提交和差异，再由用户决定是否清理备份及旧工作树；本轮不删除。
 
 ## 每个 PR 的交付与停止点
 
