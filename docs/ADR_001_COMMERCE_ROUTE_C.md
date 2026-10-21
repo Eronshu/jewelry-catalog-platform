@@ -4,7 +4,7 @@
 
 ## 决定与理由
 
-保留现有 React Router / Cloudflare Workers 网站及受保护 Admin，沿用 D1/R2，新增自有购物车、订单、库存和运营流程，使用 Stripe 与 PayPal 托管支付。作品展示与真实营业并行，环境、数据、凭据与通知隔离。该决定不授权本轮实现、商家账户操作或生产部署。
+保留现有 React Router / Cloudflare Workers 网站及受保护 Admin，沿用 D1/R2，新增自有购物车、订单、库存和运营流程，使用 Stripe 与 PayPal 托管支付。作品展示与真实营业并行，环境、数据、凭据与通知隔离。原选型决定本身不授权实现。后续用户已另行授权可逆本地开发和本地提交；实际范围见 [执行记录](./COMMERCE_EXECUTION_LOG.md)。商家账户操作、真实支付、生产部署仍未授权。
 
 选择 C 是用户对定制体验、完整工程成果和未来经营的共同取舍，不是因为已经证明 Shopify 不适用。根据固定款业务，建议按一个收货/履约地点、简单收货验收和人工异常处理控制首版范围；不建设多仓 ERP、自有支付处理或完整会计系统。托管支付只外包支付环节，订单正确性、库存及日常运营仍由项目负责。
 
@@ -47,4 +47,4 @@ V1 是目录站的历史规格，第 40 节“不含结账”等边界仍描述 
 
 若无法落实维护人、实际费用超出预算、库存/支付关键不变量不能通过测试、小姨无法独立完成 UAT，或账户/产品资格无法支持必需支付方式，则暂停进入下一门槛并重新比较缩减范围或 A/B。改变已选架构要另记决策并说明迁移代价；不得在任务列表中悄悄恢复“Shopify 优先”。
 
-下一步是实施方案的 **C01 模型与安全契约**，不是注册支付账户或制作付款按钮。全部后续实现以 [需求](./ONLINE_SALES_REQUIREMENTS.md)、[审查](./COMMERCE_READINESS_REVIEW.md) 和 [任务顺序](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 为依据。
+初始 C01 设计和部分本地基础已完成，当前按 [四组 PR 顺序](./COMMERCE_PR_SEQUENCE.md) 整合保存成果；C09b 暂停，不能重新从注册账户或付款按钮开始。全部后续实现以 [需求](./ONLINE_SALES_REQUIREMENTS.md)、[审查](./COMMERCE_READINESS_REVIEW.md) 和 [任务顺序](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 为依据。
