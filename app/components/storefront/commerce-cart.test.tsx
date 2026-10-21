@@ -58,7 +58,12 @@ let dispose: (() => void) | undefined;
 let submitted: FormData | undefined;
 
 async function mount(
-  options: { quote?: TestQuote; error?: string; items?: QuoteVariant[] } = {},
+  options: {
+    quote?: TestQuote;
+    quoteId?: string;
+    error?: string;
+    items?: QuoteVariant[];
+  } = {},
 ) {
   function Page() {
     const actionQuote = useActionData() as TestQuote | undefined;
@@ -66,6 +71,7 @@ async function mount(
       <CommerceCart
         variants={options.items ?? variants}
         quote={actionQuote ?? options.quote}
+        quoteId={options.quoteId}
         error={options.error}
       />
     );
@@ -77,6 +83,7 @@ async function mount(
         Component: Page,
         action: async ({ request }) => {
           submitted = await request.formData();
+          if (submitted.get("intent") === "reserve") return null;
           return buildTestQuote(
             JSON.parse(String(submitted.get("lines"))) as CartLine[],
             variants,
@@ -377,6 +384,99 @@ describe("local test commerce cart", () => {
     expect(
       document.querySelector('[aria-label="Server test quote"]'),
     ).toBeNull();
+  });
+
+  it("shows server product prices and posts only the quote reference when reserving", async () => {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify([{ variantId: "gold", quantity: 1 }]),
+    );
+    const quote = buildTestQuote(
+      [{ variantId: "gold", quantity: 1 }],
+      variants,
+      "pickup",
+      Date.now(),
+    );
+    await mount({ quote, quoteId: "test-quote-123" });
+    expect(
+      document.querySelector('[aria-label="Test products"]')?.textContent,
+    ).toContain("$19.95 CAD");
+    expect(document.querySelectorAll("h1")).toHaveLength(0);
+    expect(document.querySelectorAll("form")).toHaveLength(2);
+    expect(document.querySelector("form form")).toBeNull();
+    await click("Reserve quoted items (test only)");
+    expect([...submitted!.entries()]).toEqual([
+      ["intent", "reserve"],
+      ["quoteId", "test-quote-123"],
+    ]);
+  });
+
+  it.each(["quantity", "delivery", "expiry"])(
+    "removes the reservation form when %s invalidates the quote",
+    async (change) => {
+      vi.useFakeTimers();
+      window.localStorage.setItem(
+        key,
+        JSON.stringify([{ variantId: "gold", quantity: 1 }]),
+      );
+      const quote = buildTestQuote(
+        [{ variantId: "gold", quantity: 1 }],
+        variants,
+        "pickup",
+        Date.now(),
+      );
+      await mount({ quote, quoteId: "test-quote-123" });
+      expect(button("Reserve quoted items (test only)")).toBeTruthy();
+      if (change === "quantity") await quantity("2");
+      if (change === "delivery") {
+        await act(async () => {
+          const select = document.querySelector("select")!;
+          select.value = "shipping";
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      }
+      if (change === "expiry")
+        await act(async () => vi.advanceTimersByTime(600_001));
+      expect(document.querySelector('input[name="quoteId"]')).toBeNull();
+      expect(
+        document.querySelector('[aria-label="Server test quote"]'),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    "missing-reference",
+    "changed-version",
+    "changed-price",
+    "server-error",
+  ])("withholds reservation for %s", async (condition) => {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify([{ variantId: "gold", quantity: 1 }]),
+    );
+    const quote = buildTestQuote(
+      [{ variantId: "gold", quantity: 1 }],
+      variants,
+      "pickup",
+      Date.now(),
+    );
+    await mount({
+      quote,
+      quoteId: condition === "missing-reference" ? undefined : "test-quote-123",
+      error: condition === "server-error" ? "Stock changed." : undefined,
+      items: variants.map((v) =>
+        v.id !== "gold"
+          ? v
+          : {
+              ...v,
+              version:
+                condition === "changed-version" ? v.version + 1 : v.version,
+              priceCents:
+                condition === "changed-price" ? v.priceCents + 1 : v.priceCents,
+            },
+      ),
+    });
+    expect(document.querySelector('input[name="quoteId"]')).toBeNull();
   });
 
   it("exposes server errors as an alert", async () => {

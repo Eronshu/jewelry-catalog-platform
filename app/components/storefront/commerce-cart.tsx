@@ -49,10 +49,12 @@ function money(cents: number) {
 export function CommerceCart({
   variants,
   quote,
+  quoteId,
   error,
 }: {
   variants: QuoteVariant[];
   quote?: TestQuote;
+  quoteId?: string;
   error?: string;
 }) {
   const [lines, setLines] = useState<CartLine[]>([]);
@@ -136,7 +138,7 @@ export function CommerceCart({
 
   return (
     <section aria-labelledby={`${prefix}-heading`} className="space-y-6">
-      <h1 id={`${prefix}-heading`}>Local test cart</h1>
+      <h2 id={`${prefix}-heading`}>Local test cart</h2>
       <p>Local test only — fictional fees and tax. No payment is taken.</p>
       <p>
         Your device saves only the selected test items and quantities. Stock is
@@ -145,9 +147,10 @@ export function CommerceCart({
       <ul className="space-y-4" aria-label="Test products">
         {variants.map((variant) => (
           <li key={variant.id}>
-            <h2>
+            <h3>
               {variant.name} — {variant.colour}
-            </h2>
+            </h3>
+            <p>{money(variant.priceCents)} CAD</p>
             <p>{variant.sizeDescription}</p>
             <button
               type="button"
@@ -292,7 +295,7 @@ export function CommerceCart({
       )}
       {quoteMatches && !pending && !error && (
         <section aria-label="Server test quote" aria-live="polite">
-          <h2>Server test quote (CAD)</h2>
+          <h3>Server test quote (CAD)</h3>
           <ul>
             {quote.lines.map((line) => (
               <li key={line.variantId}>
@@ -316,6 +319,14 @@ export function CommerceCart({
             {new Date(quote.expiresAt).toLocaleTimeString("en-CA")}. No stock
             has been reserved.
           </p>
+          {quoteId && (
+            <Form method="post">
+              <input type="hidden" name="intent" value="reserve" />
+              <input type="hidden" name="quoteId" value={quoteId} />
+              <p>This only reserves test stock. No payment is taken.</p>
+              <button type="submit">Reserve quoted items (test only)</button>
+            </Form>
+          )}
         </section>
       )}
     </section>
