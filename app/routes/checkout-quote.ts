@@ -15,8 +15,12 @@ const privateHeaders = {
   "Cache-Control": "private, no-store",
   "X-Robots-Tag": "noindex, nofollow",
 };
-export function headers() {
-  return privateHeaders;
+export function headers(args?: Route.HeadersArgs) {
+  // Single-fetch (.data) responses use this export for final HTTP headers.
+  // Keep the method information without weakening the fixed privacy headers.
+  const allow =
+    args?.actionHeaders.get("Allow") ?? args?.loaderHeaders.get("Allow");
+  return { ...privateHeaders, ...(allow ? { Allow: allow } : {}) };
 }
 export function loader({ request, context }: Route.LoaderArgs) {
   requireLocalCommerce(request, context.get(cloudflareContext).env);

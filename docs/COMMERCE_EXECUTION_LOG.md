@@ -67,3 +67,7 @@
 - **构建后 HTTP 冒烟：**隔离 runner 在新临时 D1/R2 和 8793 loopback 上启动；实际 POST 得到两件虚构商品的邮寄报价 CAD 71.50、自取无地址报价 CAD 55.00；购买 FB 留量中的第 5 件返回 409，非法邮箱返回 422，GET 返回 405，响应无个人资料或 Cookie，均 no-store/noindex。runner 测试后停止，原有进程不动。此为 HTTP 冒烟，不是顾客 UI、真机或服务商 E2E。
 - **停止与回滚：**开 PR 后等待该 head 的 CI 和独立审查；C09b2 不进入本分支。撤回本接口/模块或停止本地模式即可，保留原购物车和库存/订单历史，无数据降级。地址可投递性/省邮编对应仍未核验；下一页面需浏览器原生 autocomplete、手工修改、错误聚焦、输入变更清空旧报价、过期/迟到响应及金额重确认；iPhone Safari/UAT 另验收。
 - **资料保存建议：**沿用游客结账；后续 C09c 保存受权限保护的订单联系/交付快照，无需先建会员/地址簿。地址簿即使以后新增也不改历史订单。浏览器自动填充不依赖本站会员；第三方地址候选服务属于另行评估范围，不在本批接账户或购买服务。
+
+### C09b1 / PR #36 审查修复
+
+独立审查指出 `headers` 导出丢失 405 的 `Allow: POST`。通过真实 React Router request handler 补回归，原实现直接 resource GET/DELETE 通过，但对应 `.data` 请求均缺 Allow 而失败；因此不是只看 loader 对象的测试。修复只保留 loader/action 的 Allow，同时固定 no-store/noindex，不引入其他功能。四条最终 HTTP 响应用例均通过；修复后完整 format/lint/typecheck、450 项应用测试、6 项付款模拟、生产构建及 Admin 资源检查通过。仍需重新通过 CI 和独立审查，未通过不合并、不启动 C09b2。用户另行要求的 Google Places 已记录 Issue #37，依赖交付表单，独立 PR 实现，不堆入本分支。
