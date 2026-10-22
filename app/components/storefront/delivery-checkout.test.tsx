@@ -366,6 +366,45 @@ describe("local delivery form and quote review", () => {
       ).value,
     ).toBe("100 Fictional Test Street");
   });
+  it("keeps Google search usable after a request error so a later real suggestion can be selected", async () => {
+    await mount(testBrowserKey);
+    await contact();
+    await field("method", "shipping");
+    await address();
+    await submit();
+    await confirm();
+    await click("Search address with Google");
+    await act(async () => googleWidget.dispatchEvent(new Event("input")));
+    await act(async () => googleWidget.dispatchEvent(new Event("gmp-error")));
+    expect(googleWidget.isConnected).toBe(true);
+    expect(checkbox()).toBeNull();
+    await selectPlace({
+      addressComponents: placeComponents(),
+      fetchFields: vi.fn().mockResolvedValue(undefined),
+    });
+    await submit();
+    expect(requests.at(-1)?.delivery).toMatchObject({
+      address: { line1: "200 Fictional New Street", line2: "Unit TEST" },
+    });
+    expect(document.body.textContent).toContain("Address suggestion filled");
+    expect(checkbox()).not.toBeNull();
+  });
+  it("does not let an uncorrelated search error discard newer selected-address details", async () => {
+    await mount(testBrowserKey);
+    await field("method", "shipping");
+    await address();
+    await click("Search address with Google");
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => (finish = resolve));
+    await selectPlace({
+      addressComponents: placeComponents(),
+      fetchFields: () => pending,
+    });
+    await act(async () => googleWidget.dispatchEvent(new Event("gmp-error")));
+    await act(async () => finish());
+    expect(document.body.textContent).toContain("Address suggestion filled");
+    expect(googleWidget.isConnected).toBe(true);
+  });
   it.each(["load", "auth", "details", "timeout"])(
     "keeps manual entry and quotes usable after Google %s failure",
     async (failure) => {
@@ -392,11 +431,24 @@ describe("local delivery form and quote review", () => {
         await act(async () => vi.advanceTimersByTime(10_001));
       }
       expect(document.body.textContent).toContain(
-        "Google address search is unavailable",
+        failure === "load"
+          ? "Google address search is unavailable"
+          : "Google address search could not complete",
       );
       expect(document.body.textContent).not.toContain("private provider error");
       await submit();
       expect(checkbox()).not.toBeNull();
+      if (failure !== "load") {
+        expect(googleWidget.isConnected).toBe(true);
+        await selectPlace({
+          addressComponents: placeComponents(),
+          fetchFields: vi.fn().mockResolvedValue(undefined),
+        });
+        expect(document.body.textContent).toContain(
+          "Address suggestion filled",
+        );
+        expect(checkbox()).toBeNull();
+      }
     },
   );
   it("requires fresh review after a refreshed quote changes the amount", async () => {

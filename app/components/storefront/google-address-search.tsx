@@ -45,6 +45,22 @@ export function GoogleAddressSearch({
       );
       widget?.remove();
     };
+    // A gmp-error describes one backend request, not the widget's lifetime.
+    // During real typing an earlier request can fail while newer suggestions
+    // still arrive. Keep the official widget usable; never correlate this event
+    // with a pending details request whose ID the event does not provide.
+    const searchError = () => {
+      if (disposed || unavailable) return;
+      setStatus(
+        "Google address search could not complete. You can keep searching or enter your address below.",
+      );
+    };
+    const detailsFailed = () => {
+      if (disposed || unavailable) return;
+      generation++;
+      window.clearTimeout(detailsTimer);
+      searchError();
+    };
     const edit = () => {
       if (disposed || unavailable) return;
       generation++;
@@ -59,7 +75,7 @@ export function GoogleAddressSearch({
       const selection = ++generation;
       const apply = callbacks.current.onBegin();
       window.clearTimeout(detailsTimer);
-      detailsTimer = window.setTimeout(fail, 10_000);
+      detailsTimer = window.setTimeout(detailsFailed, 10_000);
       setStatus("Loading the selected address… You can also type below.");
       try {
         const place = (event as PlaceSelectionEvent).placePrediction.toPlace();
@@ -79,7 +95,7 @@ export function GoogleAddressSearch({
             : "Your details changed while the address loaded. They were kept; choose again if needed.",
         );
       } catch {
-        if (!disposed && generation === selection) fail();
+        if (!disposed && generation === selection) detailsFailed();
       }
     };
     load(apiKey)
@@ -99,7 +115,7 @@ export function GoogleAddressSearch({
         );
         widget.addEventListener("input", edit);
         widget.addEventListener("gmp-select", select);
-        widget.addEventListener("gmp-error", fail);
+        widget.addEventListener("gmp-error", searchError);
         host.current?.replaceChildren(widget);
         setStatus(
           "Choose an address suggestion, then review the editable fields below.",
@@ -112,7 +128,7 @@ export function GoogleAddressSearch({
       window.clearTimeout(detailsTimer);
       widget?.removeEventListener("input", edit);
       widget?.removeEventListener("gmp-select", select);
-      widget?.removeEventListener("gmp-error", fail);
+      widget?.removeEventListener("gmp-error", searchError);
       widget?.remove();
     };
   }, [requested, apiKey, load]);
