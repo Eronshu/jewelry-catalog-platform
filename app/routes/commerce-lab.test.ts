@@ -82,6 +82,14 @@ describe("local commerce route trust boundary", () => {
       expect.stringMatching(/^[a-f0-9]{64}$/),
     );
   });
+  it("exposes only whether expiry is configured, never the private capability", async () => {
+    const input = args(new Request(`${origin}/commerce-lab`));
+    const env = input.context.get(cloudflareContext).env;
+    Object.assign(env, { COMMERCE_LOCAL_EXPIRY_TOKEN: "c".repeat(64) });
+    const result = await loader(input);
+    expect(result.data.expiryConfigured).toBe(true);
+    expect(JSON.stringify(result.data)).not.toContain("c".repeat(64));
+  });
   it("keeps document and action responses private and unindexed", () => {
     const result = headers({
       loaderHeaders: new Headers({ "Set-Cookie": "fictional-cookie" }),

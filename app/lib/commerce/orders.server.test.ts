@@ -23,6 +23,8 @@ import {
   reserveTestOrder,
 } from "./orders.server";
 import { expireTestOrderBatch } from "./order-expiry.server";
+import { handleWorkerRequest } from "../../../workers/app";
+import { createLocalExpiryDriver } from "../../../scripts/commerce-expiry-driver.mjs";
 
 const root = resolve(process.cwd());
 const owner = "a".repeat(64);
@@ -148,10 +150,71 @@ describe("bounded internal expiry batches on real local D1", () => {
       );
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await db
       .prepare("DROP TRIGGER IF EXISTS expiry_test_release_failure")
       .run();
   });
+
+  it("runs the authenticated driver through the Worker on local D1, stops at a page and restarts a fresh sweep", async () => {
+    const items = [];
+    for (let index = 0; index < 11; index++)
+      items.push(await reserved(index % 2 ? owner : otherOwner));
+    vi.spyOn(Date, "now").mockReturnValue(now + 900_002);
+    const origin = "http://127.0.0.1:8792";
+    const token = "c".repeat(64);
+    const localEnv = {
+      DB: db,
+      COMMERCE_MODE: "local-test",
+      COMMERCE_LOCAL_EXPIRY_TOKEN: token,
+    } as unknown as Env;
+    const fetcher: typeof fetch = async (url, init) =>
+      handleWorkerRequest(
+        new Request(String(url), init),
+        localEnv,
+        {} as ExecutionContext,
+      );
+    async function onePage() {
+      const messages: string[] = [];
+      await new Promise<void>((resolve, reject) => {
+        const driver = createLocalExpiryDriver({
+          origin,
+          token,
+          fetcher,
+          report(message) {
+            messages.push(message);
+            if (message.startsWith("Local expiry observed:")) {
+              driver.stop();
+              resolve();
+            } else if (message.includes("stopped:")) {
+              driver.stop();
+              reject(new Error("Local driver failed"));
+            }
+          },
+        });
+        driver.start();
+      });
+      return messages.join(" ");
+    }
+    expect(await onePage()).toContain("cancelled=10");
+    expect(
+      (
+        await Promise.all(
+          items.map((item) => getTestOrder(db, item.customer, item.order.id)),
+        )
+      ).filter((order) => order?.state === "cancelled"),
+    ).toHaveLength(10);
+    // New driver has no cursor; persisted state is authoritative, not its timer.
+    expect(await onePage()).toContain("cancelled=1");
+    expect(await onePage()).toContain("cancelled=0");
+    for (const item of items) {
+      expect(await balance(item.variantId)).toMatchObject({
+        on_hand: 3,
+        checkout_reserved: 0,
+      });
+      expect(await transitions(item.order.id)).toBe(1);
+    }
+  }, 15_000);
 
   async function reserved(customer = owner, offset = 1) {
     const saved = await quoted(1, 3, customer);

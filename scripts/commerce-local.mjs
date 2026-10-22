@@ -4,8 +4,10 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { readPlacesTestSettings } from "./commerce-places-config.mjs";
+import { createLocalExpiryDriver } from "./commerce-expiry-driver.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2)
@@ -17,10 +19,20 @@ if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535)
   throw new Error("COMMERCE_LOCAL_PORT must be an integer from 1024 to 65535.");
 const directory = mkdtempSync(join(tmpdir(), "jewelry-commerce-local-"));
 const places = readPlacesTestSettings(process.env);
-if (places)
+const expiryMode = process.env.COMMERCE_EXPIRY_MODE;
+if (expiryMode !== undefined && expiryMode !== "local-test")
+  throw new Error(
+    "COMMERCE_EXPIRY_MODE only accepts local-test; omit to disable.",
+  );
+const expiryToken = expiryMode ? randomBytes(32).toString("hex") : undefined;
+const privateSettings = {
+  ...places,
+  ...(expiryToken ? { COMMERCE_LOCAL_EXPIRY_TOKEN: expiryToken } : {}),
+};
+if (Object.keys(privateSettings).length)
   writeFileSync(
     join(directory, ".dev.vars"),
-    Object.entries(places)
+    Object.entries(privateSettings)
       .map(([name, value]) => `${name}=${value}`)
       .join("\n"),
     { mode: 0o600 },
@@ -47,6 +59,7 @@ writeFileSync(
           "/checkout/quote.data",
           "/commerce-lab",
           "/commerce-lab.data",
+          "/_local/commerce/expiry",
           "/admin",
           "/admin.data",
           "/admin/*",
@@ -178,8 +191,24 @@ const server = spawn(
   ],
   { cwd: directory, env, stdio: "inherit" },
 );
+const expiry = expiryToken
+  ? createLocalExpiryDriver({
+      origin: `http://127.0.0.1:${port}`,
+      token: expiryToken,
+    })
+  : undefined;
+expiry?.start();
+console.log(
+  expiry
+    ? "Local expiry enabled: bounded batches every 30s after readiness; see terminal health."
+    : "Local expiry off (opt in with COMMERCE_EXPIRY_MODE=local-test).",
+);
 for (const signal of ["SIGINT", "SIGTERM"])
-  process.on(signal, () => server.kill(signal));
+  process.on(signal, () => {
+    expiry?.stop();
+    server.kill(signal);
+  });
 server.on("exit", (code) => {
+  expiry?.stop();
   process.exitCode = code ?? 0;
 });
