@@ -3,6 +3,7 @@ import {
   createLocalExpiryDriver,
   EXPIRY_INTERVAL_MS,
 } from "../../../scripts/commerce-expiry-driver.mjs";
+import { readCommerceLocalPort } from "../../../scripts/commerce-local-config.mjs";
 
 const origin = "http://127.0.0.1:8792";
 const token = "c".repeat(64);
@@ -19,6 +20,33 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("bounded local expiry driver", () => {
+  it.each([
+    [undefined, "8791"],
+    ["08791", "8791"],
+    ["00001024", "1024"],
+    ["65535", "65535"],
+  ])(
+    "normalizes accepted runner port %s before constructing the driver",
+    (raw, expected) => {
+      const port = readCommerceLocalPort(raw);
+      expect(port).toBe(expected);
+      expect(() =>
+        createLocalExpiryDriver({ origin: `http://127.0.0.1:${port}`, token }),
+      ).not.toThrow();
+    },
+  );
+  it.each([
+    "",
+    "1023",
+    "65536",
+    "8791.0",
+    " 8791",
+    "1e4",
+    "8791suffix",
+    "9".repeat(400),
+  ])("rejects invalid runner port %s before startup", (raw) => {
+    expect(() => readCommerceLocalPort(raw)).toThrow("COMMERCE_LOCAL_PORT");
+  });
   it("pages once per tick then starts a fresh sweep, logging counts only", async () => {
     vi.useFakeTimers();
     const fetcher = vi

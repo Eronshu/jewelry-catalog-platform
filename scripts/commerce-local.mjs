@@ -8,15 +8,14 @@ import { randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { readPlacesTestSettings } from "./commerce-places-config.mjs";
 import { createLocalExpiryDriver } from "./commerce-expiry-driver.mjs";
+import { readCommerceLocalPort } from "./commerce-local-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2)
   throw new Error("No arguments supported: local fictional data only.");
 if (!existsSync(join(root, "build/server/index.js")))
   throw new Error("Run npm run build first.");
-const port = process.env.COMMERCE_LOCAL_PORT ?? "8791";
-if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535)
-  throw new Error("COMMERCE_LOCAL_PORT must be an integer from 1024 to 65535.");
+const port = readCommerceLocalPort(process.env.COMMERCE_LOCAL_PORT);
 const directory = mkdtempSync(join(tmpdir(), "jewelry-commerce-local-"));
 const places = readPlacesTestSettings(process.env);
 const expiryMode = process.env.COMMERCE_EXPIRY_MODE;
@@ -172,6 +171,13 @@ wrangler([
 console.log(
   `Fictional state preserved at: ${directory}\nShopping preview: http://127.0.0.1:${port}/products/fictional-0\nDeveloper lab: http://127.0.0.1:${port}/commerce-lab\nCtrl-C stops the server. A new run creates a new database; no existing data is deleted.`,
 );
+// Validate the driver before starting a child that would otherwise be orphaned.
+const expiry = expiryToken
+  ? createLocalExpiryDriver({
+      origin: `http://127.0.0.1:${port}`,
+      token: expiryToken,
+    })
+  : undefined;
 const server = spawn(
   process.execPath,
   [
@@ -191,12 +197,6 @@ const server = spawn(
   ],
   { cwd: directory, env, stdio: "inherit" },
 );
-const expiry = expiryToken
-  ? createLocalExpiryDriver({
-      origin: `http://127.0.0.1:${port}`,
-      token: expiryToken,
-    })
-  : undefined;
 expiry?.start();
 console.log(
   expiry
