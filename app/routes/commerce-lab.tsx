@@ -3,6 +3,7 @@ import type { Route } from "./+types/commerce-lab";
 import { cloudflareContext } from "../cloudflare-context";
 import { CommerceCart } from "../components/storefront/commerce-cart";
 import { requireLocalCommerce } from "../lib/commerce/environment.server";
+import { localExpiryConfigured } from "../lib/commerce/expiry-trigger.server";
 import { listCommerceVariants } from "../lib/commerce/inventory.server";
 import {
   createTestQuote,
@@ -36,6 +37,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     {
       variants: await listCommerceVariants(env.DB),
       orders: await listTestOrders(env.DB, session.owner),
+      expiryConfigured: localExpiryConfigured(env),
     },
     {
       headers: {
@@ -178,10 +180,11 @@ export default function CommerceLab({
         <div className="commerce-reservations">
           <h2>Recent test reservations</h2>
           <p>
-            Recent reservations for this browser session (up to 20). This local
-            prototype does not run an automatic expiry job. Cancel unpaid
-            reservations here to release test stock; the deadline alone does not
-            release it. Clearing cookies loses access.
+            Recent reservations for this browser session (up to 20).{" "}
+            {loaderData.expiryConfigured
+              ? "Local expiry is configured. Check the runner terminal for task health; refresh this page to see committed cancellations. A deadline alone does not prove stock was released."
+              : "Automatic expiry is off. Cancel unpaid reservations here to release test stock; the deadline alone does not release it."}{" "}
+            Clearing cookies loses access.
           </p>
           {orders.map((order) => (
             <section

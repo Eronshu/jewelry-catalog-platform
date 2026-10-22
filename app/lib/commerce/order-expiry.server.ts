@@ -1,7 +1,7 @@
 import { OrderError, releaseTestOrder } from "./orders.server";
 
 // Internal batch primitive only. Callers must supply an isolated local D1;
-// there is no HTTP endpoint, scheduler, environment bypass or customer capability.
+// the engine itself supplies no invocation authorization or customer capability.
 export const MAX_EXPIRY_BATCH_SIZE = 25;
 export type ExpiryCursor = { reserveUntil: number; orderId: string };
 type ExpiryOptions = {

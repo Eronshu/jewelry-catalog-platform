@@ -4,23 +4,34 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { readPlacesTestSettings } from "./commerce-places-config.mjs";
+import { createLocalExpiryDriver } from "./commerce-expiry-driver.mjs";
+import { readCommerceLocalPort } from "./commerce-local-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2)
   throw new Error("No arguments supported: local fictional data only.");
 if (!existsSync(join(root, "build/server/index.js")))
   throw new Error("Run npm run build first.");
-const port = process.env.COMMERCE_LOCAL_PORT ?? "8791";
-if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535)
-  throw new Error("COMMERCE_LOCAL_PORT must be an integer from 1024 to 65535.");
+const port = readCommerceLocalPort(process.env.COMMERCE_LOCAL_PORT);
 const directory = mkdtempSync(join(tmpdir(), "jewelry-commerce-local-"));
 const places = readPlacesTestSettings(process.env);
-if (places)
+const expiryMode = process.env.COMMERCE_EXPIRY_MODE;
+if (expiryMode !== undefined && expiryMode !== "local-test")
+  throw new Error(
+    "COMMERCE_EXPIRY_MODE only accepts local-test; omit to disable.",
+  );
+const expiryToken = expiryMode ? randomBytes(32).toString("hex") : undefined;
+const privateSettings = {
+  ...places,
+  ...(expiryToken ? { COMMERCE_LOCAL_EXPIRY_TOKEN: expiryToken } : {}),
+};
+if (Object.keys(privateSettings).length)
   writeFileSync(
     join(directory, ".dev.vars"),
-    Object.entries(places)
+    Object.entries(privateSettings)
       .map(([name, value]) => `${name}=${value}`)
       .join("\n"),
     { mode: 0o600 },
@@ -47,6 +58,7 @@ writeFileSync(
           "/checkout/quote.data",
           "/commerce-lab",
           "/commerce-lab.data",
+          "/_local/commerce/expiry",
           "/admin",
           "/admin.data",
           "/admin/*",
@@ -159,6 +171,13 @@ wrangler([
 console.log(
   `Fictional state preserved at: ${directory}\nShopping preview: http://127.0.0.1:${port}/products/fictional-0\nDeveloper lab: http://127.0.0.1:${port}/commerce-lab\nCtrl-C stops the server. A new run creates a new database; no existing data is deleted.`,
 );
+// Validate the driver before starting a child that would otherwise be orphaned.
+const expiry = expiryToken
+  ? createLocalExpiryDriver({
+      origin: `http://127.0.0.1:${port}`,
+      token: expiryToken,
+    })
+  : undefined;
 const server = spawn(
   process.execPath,
   [
@@ -178,8 +197,18 @@ const server = spawn(
   ],
   { cwd: directory, env, stdio: "inherit" },
 );
+expiry?.start();
+console.log(
+  expiry
+    ? "Local expiry enabled: bounded batches every 30s after readiness; see terminal health."
+    : "Local expiry off (opt in with COMMERCE_EXPIRY_MODE=local-test).",
+);
 for (const signal of ["SIGINT", "SIGTERM"])
-  process.on(signal, () => server.kill(signal));
+  process.on(signal, () => {
+    expiry?.stop();
+    server.kill(signal);
+  });
 server.on("exit", (code) => {
+  expiry?.stop();
   process.exitCode = code ?? 0;
 });

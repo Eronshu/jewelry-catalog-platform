@@ -2,6 +2,10 @@ import { createRequestHandler, RouterContextProvider } from "react-router";
 
 import { cloudflareContext } from "../app/cloudflare-context";
 import {
+  handleLocalExpiry,
+  LOCAL_EXPIRY_PATH,
+} from "../app/lib/commerce/expiry-trigger.server";
+import {
   adminPrincipalContext,
   authenticateAdmin,
   isAdminPath,
@@ -44,6 +48,7 @@ export async function handleWorkerRequest(
   handleRoute: RouteHandler = requestHandler,
 ): Promise<Response> {
   const pathname = new URL(request.url).pathname;
+  if (pathname === LOCAL_EXPIRY_PATH) return handleLocalExpiry(request, env);
   const context = new RouterContextProvider();
   context.set(cloudflareContext, { env, ctx });
 

@@ -5,6 +5,8 @@
     "app/**/*",
     "workers/**/*",
     "scripts/commerce-places-config.mjs",
+    "scripts/commerce-expiry-driver.mjs",
+    "scripts/commerce-local-config.mjs",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {
