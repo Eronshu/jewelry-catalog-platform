@@ -4,6 +4,7 @@
     ".react-router/types/**/*",
     "app/**/*",
     "workers/**/*",
+    "scripts/commerce-places-config.mjs",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {

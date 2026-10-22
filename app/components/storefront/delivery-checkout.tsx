@@ -12,6 +12,7 @@ import {
 } from "../../lib/commerce/checkout";
 import type { DeliveryMethod } from "../../lib/commerce/quote";
 import { formatCad } from "../../lib/format-cad";
+import { GoogleAddressSearch } from "./google-address-search";
 
 const fields = [
   {
@@ -98,9 +99,13 @@ const initialDetails: Details = {
 };
 
 // This is transient form state. Do not put it in the cart provider, browser
-// storage, route search parameters or analytics. Places will be a later adapter
-// that updates these same editable address fields and invalidates the quote.
-export function DeliveryCheckout() {
+// storage, route search parameters or analytics. The optional Places adapter
+// updates these same editable address fields and invalidates the quote.
+export function DeliveryCheckout({
+  placesKey = null,
+}: {
+  placesKey?: string | null;
+}) {
   const cart = useShoppingCart();
   const cartKey = JSON.stringify(cart.lines);
   const [observedCart, setObservedCart] = useState(cartKey);
@@ -112,6 +117,7 @@ export function DeliveryCheckout() {
   const [now, setNow] = useState(Date.now);
   const errorSummary = useRef<HTMLDivElement>(null);
   const active = useRef<Attempt | null>(null);
+  const detailsRevision = useRef(0);
   // A changed-then-restored cart must not resurrect its old quote/confirmation.
   if (observedCart !== cartKey) {
     setObservedCart(cartKey);
@@ -152,6 +158,7 @@ export function DeliveryCheckout() {
   }, [current]);
 
   function invalidate() {
+    detailsRevision.current++;
     active.current?.controller.abort();
     window.clearTimeout(active.current?.timer);
     active.current = null;
@@ -380,6 +387,25 @@ export function DeliveryCheckout() {
         {details.method !== "pickup" && (
           <fieldset className="checkout-address">
             <legend>Delivery address</legend>
+            <GoogleAddressSearch
+              key={`${details.method}:${cartKey}`}
+              apiKey={placesKey}
+              onSearchEdit={invalidate}
+              onBegin={() => {
+                invalidate();
+                const revision = detailsRevision.current;
+                return (address) => {
+                  if (detailsRevision.current !== revision) return false;
+                  invalidate();
+                  setDetails((previous) => ({
+                    ...previous,
+                    ...address,
+                    line2: previous.line2 || address.line2,
+                  }));
+                  return true;
+                };
+              }}
+            />
             {fields.slice(2).map(input)}
             <div className="checkout-field">
               <label htmlFor={idFor("delivery.address.province")}>

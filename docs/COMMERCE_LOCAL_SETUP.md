@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status (2026-10-21, C09b2 / #38): C09a adds an isolated product-detail → customer cart preview; C09b2 continues to a transient delivery form and test quote review. The separate developer lab still exercises server quotes and unpaid reservations. Neither is connected to provider payment or approved for deployment. [The PR sequence](./COMMERCE_PR_SEQUENCE.md) governs current integration; [the implementation plan](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) retains later acceptance gates.
+Status (2026-10-21): C09b2 / #38 merged in PR #39. The isolated product-detail → cart → delivery → test quote flow is available locally. Issue #37 adds an optional Google Places adapter; Demo Key backed browser search/selection/field filling/test quote has now passed, but standard restricted-key and real iPhone Safari acceptance remain outstanding. The separate developer lab still exercises unpaid reservations. Neither flow is connected to provider payment or approved for deployment. [The PR sequence](./COMMERCE_PR_SEQUENCE.md) governs integration; [the implementation plan](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) retains later gates.
 
 ## Availability policy
 
@@ -41,7 +41,7 @@ The customer cart saves only variant IDs and integer quantities under `velaform-
 
 This is an item subtotal, not a final quote: no delivery, tax, address, customer identity, reservation or order is created by `/cart`. Cart reads do not reduce inventory. Two tabs do not currently synchronize changes. Local-only purchase controls appear on the existing product route; the default public site has no purchase controls and `/cart` is unavailable.
 
-The temporary Wrangler configuration has no remote IDs or preview configuration. The child environment uses an allowlist without inherited API credentials, disables dotenv loading and telemetry, and uses temporary config/state paths. The runner does not modify repository bindings or read merchant accounts. Do not expose the port through a public proxy. Do not reuse this test configuration for Sandbox callbacks or deployment.
+The temporary Wrangler configuration has no remote IDs or preview configuration. The child environment uses an allowlist without inherited API credentials, disables repository dotenv loading and telemetry, and uses temporary config/state paths. The runner does not modify repository bindings or read merchant accounts. The only optional credential bridge is an explicitly selected, separate Google browser test key file, described below. Do not expose the port through a public proxy. Do not reuse this test configuration for Sandbox callbacks or deployment.
 
 ### Separate developer lab
 
@@ -71,4 +71,14 @@ Every form/cart change, retry, failure or expired quote clears the prior review/
 
 The summary shows current items, test delivery/tax and CAD total. The checkbox only acknowledges reviewing fictional charges; it creates no order, stock hold or payment and does not submit an acceptance token to the server. C09c must still bind a new quote/details snapshot to an owned order and revalidate stock before provider payment.
 
-Google Places is explicitly requested but **not implemented in this slice**. Issue #37 follows this form after review/merge, using the same editable address fields and invalidation path, with manual-entry fallback. No Google key, account, billing or external script is loaded here. Rollback removes the local cart link and checkout route/component, or stops local mode; the existing cart/lab and history remain usable. No schema downgrade is needed.
+PR #39 merged as `6f42d36`; the Google adapter below is a separate slice. Rollback removes the local cart link and checkout route/component, or stops local mode; the existing cart/lab and history remain usable. No schema downgrade is needed.
+
+## Optional Google Places local test / #37
+
+Default runs do not read a Google key or load its script. A separate browser test key can be enabled through the explicit mode/key-file bridge in [Google Places local setup](./GOOGLE_PLACES_LOCAL_SETUP.md). Standard keys require owner-approved project/billing and restrictions; the verified prototype instead used an owner-authorized limited Demo Key without activating billing. This work does not create/configure accounts. No server/payment key belongs in this bridge. Browser keys are visible in page data/requests; future standard/production configuration needs its own restrictions and acceptance.
+
+For local delivery/shipping, the visitor can choose **Search address with Google**, with a notice that search text goes to Google. Only that action loads the SDK. Pickup does not show it. Canadian suggestions feed editable address components into the existing form; missing required fields still block quotes. Existing apartment/unit text is preserved and must be reviewed. Suggestions do not verify delivery eligibility. Searching/selecting invalidates old quotes and confirmations; late results cannot overwrite newer edits, cart changes or delivery-mode changes. Timeouts, missing/denied configuration and provider failures leave manual entry available. No map or location permission is requested.
+
+The application requests only `addressComponents` and does not persist raw responses, place IDs, coordinates or search history. Address/contact state remains transient; normal POST quote validation and server amount calculation remain authoritative. This does not approve retaining Google-derived address data in future orders; provider storage/attribution/privacy requirements must be checked before that work.
+
+Local automated tests use a stub widget and intercept script insertion; they are not provider acceptance. Initial dummy-key smoke verified private temporary `.dev.vars` mode 0600, hidden key output, no script before opt-in and usable manual quotes. Subsequent real Demo Key testing exposed an application bug: one request error permanently removed the widget even though later requests could succeed. Fixed handling keeps search/manual entry usable and does not discard newer details on an uncorrelated search error. The actual compiled page then passed Canadian public-location suggestions, keyboard selection, field filling, unit retention, test quote and subsequent search edit invalidation; 390px layout had no overflow. Standard key restrictions/quota failures, complete attribution/privacy review, screen reader and real iPhone Safari remain outstanding. Disable by stopping/restarting without both Google settings; no data/schema rollback is needed.

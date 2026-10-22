@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { readPlacesTestSettings } from "./commerce-places-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2)
@@ -15,6 +16,15 @@ const port = process.env.COMMERCE_LOCAL_PORT ?? "8791";
 if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535)
   throw new Error("COMMERCE_LOCAL_PORT must be an integer from 1024 to 65535.");
 const directory = mkdtempSync(join(tmpdir(), "jewelry-commerce-local-"));
+const places = readPlacesTestSettings(process.env);
+if (places)
+  writeFileSync(
+    join(directory, ".dev.vars"),
+    Object.entries(places)
+      .map(([name, value]) => `${name}=${value}`)
+      .join("\n"),
+    { mode: 0o600 },
+  );
 const config = join(directory, "wrangler.json");
 const state = join(directory, "state");
 writeFileSync(
