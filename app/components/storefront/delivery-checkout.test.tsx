@@ -13,6 +13,27 @@ import {
   type PlacesLibrary,
 } from "../../lib/commerce/google-places.client";
 
+const passiveCleanup = vi.hoisted(() => ({
+  hold: false,
+  pending: [] as Array<() => void>,
+}));
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  return {
+    ...actual,
+    useEffect: (effect: import("react").EffectCallback, deps?: unknown[]) => {
+      actual.useEffect(() => {
+        const cleanup = effect();
+        if (!cleanup) return;
+        return () => {
+          if (passiveCleanup.hold) passiveCleanup.pending.push(cleanup);
+          else cleanup();
+        };
+      }, deps);
+    },
+  };
+});
+
 vi.mock("../../lib/commerce/google-places.client", () => ({
   loadGooglePlaces: vi.fn(),
 }));
@@ -203,6 +224,10 @@ beforeEach(() => {
   root = createRoot(document.getElementById("root")!);
 });
 afterEach(async () => {
+  passiveCleanup.hold = false;
+  await act(async () => {
+    for (const cleanup of passiveCleanup.pending.splice(0)) cleanup();
+  });
   await act(async () => root.unmount());
   router?.dispose();
   vi.useRealTimers();
@@ -343,6 +368,65 @@ describe("local delivery form and quote review", () => {
           ) as HTMLInputElement
         ).value,
       ).toBe("100 Fictional Test Street");
+    },
+  );
+  it.each([false, true])(
+    "rejects old Places details after a committed cart change before passive cleanup (restore cart: %s)",
+    async (restore) => {
+      await mount(testBrowserKey);
+      await contact();
+      await field("method", "shipping");
+      await address();
+      await click("Search address with Google");
+      const oldWidget = googleWidget;
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => (finish = resolve));
+      const fetchFields = vi.fn(() => pending);
+      await selectPlace({ addressComponents: placeComponents(), fetchFields });
+
+      // act normally flushes passive cleanup, hiding the commit → cleanup gap.
+      // Hold only cleanup bodies: real cart/DOM commits still happen, while the
+      // old adapter's disposed flag and event handlers have not been cleaned up.
+      passiveCleanup.hold = true;
+      await click("Change cart");
+      if (restore) await click("Restore cart");
+      expect(oldWidget.isConnected).toBe(false);
+      expect(passiveCleanup.pending.length).toBeGreaterThan(0);
+      expect(fetchFields).toHaveBeenCalledTimes(1);
+      await act(async () => finish());
+      expect(
+        (
+          document.getElementById(
+            "checkout-delivery-address-line1",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("100 Fictional Test Street");
+      expect(checkbox()).toBeNull();
+
+      passiveCleanup.hold = false;
+      await act(async () => {
+        for (const cleanup of passiveCleanup.pending.splice(0)) cleanup();
+      });
+      await submit();
+      expect(requests.at(-1)?.delivery).toMatchObject({
+        address: { line1: "100 Fictional Test Street", line2: "Unit TEST" },
+      });
+      expect(requests.at(-1)?.lines).toEqual(
+        restore ? lines : [{ variantId: "gold", quantity: 1 }],
+      );
+      await confirm();
+
+      // A selection started for the new committed cart must remain usable.
+      await click("Search address with Google");
+      await selectPlace({
+        addressComponents: placeComponents(),
+        fetchFields: vi.fn().mockResolvedValue(undefined),
+      });
+      expect(checkbox()).toBeNull();
+      await submit();
+      expect(requests.at(-1)?.delivery).toMatchObject({
+        address: { line1: "200 Fictional New Street", line2: "Unit TEST" },
+      });
     },
   );
   it("drops earlier selections and in-flight details when a new search starts", async () => {
