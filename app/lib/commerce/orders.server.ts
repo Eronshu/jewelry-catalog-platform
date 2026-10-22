@@ -201,7 +201,8 @@ export async function releaseTestOrder(
   if (
     order.state !== "pending_payment" ||
     order.paymentState !== "not_started" ||
-    (kind === "expire" && now < order.reserveUntil)
+    (kind === "expire" &&
+      (now < order.reserveUntil || order.fulfillment !== "none"))
   )
     throw new OrderError("order_conflict");
   const commandId = `${kind}-${order.id}`;
