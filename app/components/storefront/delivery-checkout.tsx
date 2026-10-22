@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router";
 import { useShoppingCart } from "./shopping-cart-context";
 import {
@@ -134,8 +140,12 @@ export function DeliveryCheckout({
   const error = problem?.key === key ? problem : null;
   const busy = pending === key;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     return () => {
+      // Invalidate in the cart commit, before the keyed Places adapter's passive
+      // cleanup. Even A → B → A must reject a selection started for the old A.
+      // Keep ref mutations out of render, which React may discard or retry.
+      detailsRevision.current += 1;
       active.current?.controller.abort();
       window.clearTimeout(active.current?.timer);
       active.current = null;
