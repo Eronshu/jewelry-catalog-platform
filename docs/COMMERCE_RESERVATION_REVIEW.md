@@ -1,6 +1,6 @@
 # C06b2a: protected read-only reservation review resource
 
-Updated 2026-10-21. Implements the first **API/read-model** part of [#44](https://github.com/Eronshu/jewelry-catalog-platform/issues/44), dependent on [#43](https://github.com/Eronshu/jewelry-catalog-platform/pull/43). #43 CI and independent review completed successfully; human merge remains separate. This resource is not a finished owner screen, customer recovery link or payment reconciliation system. No navigation link, recovery action, customer session transfer or provider call is added.
+Status checked 2026-10-26: the API/read-model part of [#44](https://github.com/Eronshu/jewelry-catalog-platform/issues/44) merged through #45 into #43, then into main as `4db36f1` on 2026-10-22. Final functional head `a730e93` passed CI60 and independent re-review with no unresolved findings. This resource is not a finished owner screen, customer recovery link or payment reconciliation system. No navigation link, recovery action, customer session transfer or provider call is present.
 
 ## Boundary and contract
 
@@ -24,4 +24,4 @@ Automated integration covers the real Worker→React Router resource with synthe
 
 No friendly owner UI, real authorized browser session, keyboard/screen-reader UI,390px UI or real iPhone Safari acceptance is claimed by this API-only slice. These remain C06b2 follow-ups. Full validation evidence is in the execution log. Actual provider Sandbox, notices, persistent payment attempts/reconciliation and production rollout remain later gates.
 
-Merge order: #43 first, then this PR after retargeting to updated main and checking its head CI/review. Keep unmerged branches; don't merge/delete the parent as a shortcut. Stop/remove this local resource on a privacy/authorization concern, retain0007 indexes and all orders/stock/history. A migration rollback must not drop data or weaken0006 expiry protection. No production migration/deployment is authorized.
+The originally planned retarget order is historical; #45 actually entered main via its parent #43. Source-only commits were archived before merged branches were removed. For new work, follow the current AGENTS rule: finish one task/branch/PR and wait for CI, review and merge before starting the next task from updated main. The next feature is the owner-facing read-only UI; recovery commands remain a separate later PR. Stop/remove this local resource on a privacy/authorization concern, retain0007 indexes and all orders/stock/history. A migration rollback must not drop data or weaken0006 expiry protection. No production migration/deployment is authorized.
