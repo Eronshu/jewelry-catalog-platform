@@ -602,6 +602,117 @@ a {
     width: 100%;
   }
 }
+.reservation-review {
+  line-height: 1.6;
+}
+.reservation-review h1:focus {
+  outline-offset: 0.4rem;
+}
+.reservation-review h2 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  line-height: 1.35;
+}
+.reservation-notice,
+.reservation-card {
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid #d8d5cf;
+  background: #fff;
+}
+.reservation-notice {
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #681c29;
+}
+.reservation-notice p {
+  margin: 0.5rem 0 0;
+}
+.reservation-button {
+  min-height: 2.75rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid #99948d;
+  background: #fff;
+  color: #171717;
+  font: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.reservation-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.reservation-search {
+  margin-bottom: 0.5rem;
+}
+.reservation-search label {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+.reservation-search a,
+.reservation-pagination a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+}
+.reservation-help,
+.reservation-update {
+  font-size: 0.9rem;
+  color: #454340;
+}
+.reservation-list {
+  padding: 0;
+  list-style: none;
+}
+.reservation-card {
+  margin-block: 1rem;
+  overflow-wrap: anywhere;
+}
+.reservation-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+.reservation-reference {
+  grid-column: 1 / -1;
+}
+.reservation-facts dt {
+  font-size: 0.85rem;
+  color: #454340;
+}
+.reservation-facts dd {
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+}
+.reservation-reasons {
+  padding-left: 1.25rem;
+  margin-bottom: 0;
+}
+.reservation-reasons p {
+  margin: 0.3rem 0 1rem;
+}
+.reservation-items,
+.reservation-history {
+  padding-left: 1.25rem;
+}
+.reservation-items li,
+.reservation-history li {
+  margin-block: 1rem;
+}
+.reservation-items strong,
+.reservation-history span {
+  display: block;
+}
+@media (max-width: 47.999rem) {
+  .reservation-facts {
+    grid-template-columns: 1fr;
+  }
+  .admin-nav {
+    flex-wrap: wrap;
+  }
+  .reservation-search input {
+    font-size: 1rem;
+  }
+}
 .site-header {
   position: relative;
   z-index: 5;

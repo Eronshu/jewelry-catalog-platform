@@ -1,10 +1,17 @@
-import { createRequestHandler, RouterContextProvider } from "react-router";
+import {
+  createRequestHandler,
+  RouterContextProvider,
+  useLoaderData,
+} from "react-router";
+import { createElement } from "react";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { cloudflareContext } from "../cloudflare-context";
 import { adminPrincipalContext } from "../lib/auth/admin-access.server";
 import { handleWorkerRequest } from "../../workers/app";
 import * as ReviewRoute from "./admin-commerce-review";
+import * as ScreenRoute from "./admin-commerce-reservations";
+import handleDocument from "../entry.server";
 
 const origin = "http://127.0.0.1:8792";
 const issuer = "https://review-fixture.cloudflareaccess.com";
@@ -18,10 +25,22 @@ const route = {
   path: "admin/commerce/review",
   module: ReviewRoute,
 };
+const screen = {
+  id: "routes/admin-commerce-reservations",
+  path: "admin/commerce/reservations",
+  module: {
+    ...ScreenRoute,
+    default: function ReviewScreenWithFrameworkProps() {
+      return createElement(ScreenRoute.default, {
+        loaderData: useLoaderData(),
+      } as Parameters<typeof ScreenRoute.default>[0]);
+    },
+  },
+};
 const handler = createRequestHandler(
   {
-    entry: { module: { default: () => new Response("Test document") } },
-    routes: { [route.id]: route },
+    entry: { module: { default: handleDocument } },
+    routes: { [route.id]: route, [screen.id]: screen },
     assets: {
       entry: { imports: [], module: "/entry.js" },
       routes: {
@@ -31,6 +50,14 @@ const handler = createRequestHandler(
           module: "/review.js",
           hasLoader: true,
           hasAction: true,
+        },
+        [screen.id]: {
+          id: screen.id,
+          path: screen.path,
+          module: "/reservations.js",
+          hasLoader: true,
+          hasAction: true,
+          hasErrorBoundary: true,
         },
       },
       url: "/manifest.js",
@@ -242,5 +269,138 @@ describe("Worker → React Router reservation-review authorization", () => {
         pattern: "/admin/commerce/review",
       }),
     ).rejects.toMatchObject({ status: 401 });
+    await expect(
+      ScreenRoute.loader({
+        request: new Request(origin + "/admin/commerce/reservations"),
+        context,
+        url: new URL(origin + "/admin/commerce/reservations"),
+        params: {},
+        pattern: "/admin/commerce/reservations",
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+  it.each([
+    "/admin/commerce/reservations",
+    "/admin/commerce/reservations.data",
+  ])(
+    "guards %s before D1 for absent, unapproved and service identities and nonlocal mode",
+    async (path) => {
+      const prepare = vi.fn();
+      const batch = vi.fn();
+      const db = { prepare, batch };
+      for (const [assertion, status] of [
+        [undefined, 401],
+        [await jwt({ sub: "unapproved" }), 403],
+        [await jwt({ common_name: "service" }), 401],
+      ] as const) {
+        expect((await throughWorker(db, assertion, "GET", path)).status).toBe(
+          status,
+        );
+      }
+      const assertion = await jwt();
+      expect(
+        (await throughWorker(db, assertion, "GET", path, false)).status,
+      ).toBe(404);
+      expect(
+        (
+          await throughWorker(
+            db,
+            assertion,
+            "GET",
+            path,
+            true,
+            "https://shop.example.invalid",
+          )
+        ).status,
+      ).toBe(404);
+      expect(prepare).not.toHaveBeenCalled();
+      expect(batch).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["", ".data"])(
+    "serves an approved minimal read-only screen%s without customer data or a lab cookie",
+    async (suffix) => {
+      const order = {
+        id: `order-${"0".repeat(36)}`,
+        state: "pending_payment",
+        paymentState: "not_started",
+        fulfillment: "none",
+        reserveUntil: 1,
+        version: 1,
+      };
+      const queries: string[] = [];
+      const prepare = vi.fn((sql: string) => {
+        queries.push(sql);
+        return {
+          bind: () => ({
+            all: async () => ({ results: [order], success: true }),
+          }),
+        };
+      });
+      const response = await throughWorker(
+        { prepare },
+        await jwt(),
+        "GET",
+        "/admin/commerce/reservations" + suffix,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+      const body = await response.text();
+      if (!suffix) {
+        expect(body).toContain("Fictional orders only");
+        expect(body).toContain("Unpaid reservation past its deadline");
+      }
+      expect(body).toContain(order.id);
+      expect(queries).toHaveLength(1);
+      expect(queries[0]).toMatch(/^SELECT /);
+      expect(queries[0]).not.toMatch(
+        /snapshot|owner_hash|email|address|provider/,
+      );
+    },
+  );
+  it.each(["POST", "PUT", "DELETE"])(
+    "denies %s on the screen without running a read or write",
+    async (method) => {
+      const prepare = vi.fn();
+      const batch = vi.fn();
+      const response = await throughWorker(
+        { prepare, batch },
+        await jwt(),
+        method,
+        "/admin/commerce/reservations",
+      );
+      expect(response.status).toBe(405);
+      expect(response.headers.get("Allow")).toBe("GET");
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(prepare).not.toHaveBeenCalled();
+      expect(batch).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps page errors generic and no-store without echoing private inputs or database failures", async () => {
+    const assertion = await jwt();
+    const prepare = vi.fn(() => {
+      throw new Error("private connection details");
+    });
+    const invalid = await throughWorker(
+      { prepare },
+      assertion,
+      "GET",
+      "/admin/commerce/reservations?email=private@example.invalid",
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.text()).not.toContain("private@example.invalid");
+    expect(prepare).not.toHaveBeenCalled();
+    const failed = await throughWorker(
+      { prepare },
+      assertion,
+      "GET",
+      "/admin/commerce/reservations",
+    );
+    expect(failed.status).toBe(503);
+    const body = await failed.text();
+    expect(body).toContain("temporarily unavailable");
+    expect(body).not.toContain("private connection details");
+    expect(failed.headers.get("Cache-Control")).toBe("private, no-store");
   });
 });

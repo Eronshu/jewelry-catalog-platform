@@ -11,6 +11,10 @@ export default [
   route("products/:slug", "routes/product-detail.tsx"),
   route("admin", "routes/admin.tsx"),
   route("admin/commerce/review", "routes/admin-commerce-review.ts"),
+  route(
+    "admin/commerce/reservations",
+    "routes/admin-commerce-reservations.tsx",
+  ),
   route("admin/products", "routes/admin-products.tsx"),
   route("admin/products/new", "routes/admin-product-new.tsx"),
   route("admin/products/new/create", "routes/admin-product-create.ts"),

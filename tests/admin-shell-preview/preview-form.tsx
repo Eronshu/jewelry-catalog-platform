@@ -20,6 +20,7 @@ export function PreviewLinks() {
       <Link to="/form">Form</Link>
       <Link to="/error">Form errors</Link>
       <Link to="/photos">Photos</Link>
+      <Link to="/admin/commerce/reservations">Test reservations</Link>
     </nav>
   );
 }
