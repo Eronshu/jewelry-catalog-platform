@@ -1,4 +1,4 @@
-import { isRouteErrorResponse } from "react-router";
+import { isRouteErrorResponse, useRouteLoaderData } from "react-router";
 
 import type { Route } from "./+types/admin";
 import { AdminShell, AdminWelcome } from "../components/admin/admin-shell";
@@ -14,7 +14,8 @@ export function meta() {
 }
 
 export default function Admin() {
-  return <AdminWelcome />;
+  const local = useRouteLoaderData<{ localShopping: boolean }>("root");
+  return <AdminWelcome localReservations={local?.localShopping === true} />;
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
