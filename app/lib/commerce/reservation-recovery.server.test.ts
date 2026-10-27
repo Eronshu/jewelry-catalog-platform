@@ -645,4 +645,63 @@ describe("operator recovery atomicity and audit on migrated local D1", () => {
     ).toMatchObject({ replayed: true });
     expect(await snapshot(item)).toEqual(after);
   });
+  it.each(["preflight", "failed-batch reconciliation"])(
+    "reconciles an identical commit between receipt lookup and the %s order read",
+    async (stage) => {
+      const item = await reserved();
+      const command = input(item.order.id);
+      let committed:
+        Awaited<ReturnType<typeof recoverExpiredReservation>> | undefined;
+      let orderReads = 0;
+      const batch = vi.fn(async () => {
+        throw new Error("Fictional transient write failure");
+      });
+      const interleaved = {
+        prepare(sql: string) {
+          const statement = db.prepare(sql);
+          if (
+            !sql.includes(
+              "reserve_until AS reserveUntil, version FROM commerce_orders",
+            )
+          )
+            return statement;
+          return {
+            bind(...values: unknown[]) {
+              const bound = statement.bind(...values);
+              return {
+                async first() {
+                  orderReads += 1;
+                  // A receipt lookup has returned null. Commit the identical
+                  // request before this preflight/reconciliation read resolves.
+                  if (orderReads === (stage === "preflight" ? 1 : 2))
+                    committed = await recoverExpiredReservation(
+                      db,
+                      actor,
+                      command,
+                      item.order.reserveUntil,
+                    );
+                  return bound.first();
+                },
+              };
+            },
+          };
+        },
+        batch,
+      } as unknown as D1Database;
+      const result = await recoverExpiredReservation(
+        interleaved,
+        actor,
+        command,
+        item.order.reserveUntil,
+      );
+      expect(committed?.replayed).toBe(false);
+      expect(result).toEqual({ ...committed, replayed: true });
+      expect(batch).toHaveBeenCalledTimes(stage === "preflight" ? 0 : 1);
+      const after = await snapshot(item);
+      expect(after.audit).toHaveLength(1);
+      expect(after.transitions).toHaveLength(1);
+      expect(after.stock[0].checkout_reserved).toBe(1);
+      expect(after.stock[1].checkout_reserved).toBe(0);
+    },
+  );
 });

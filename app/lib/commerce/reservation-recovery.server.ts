@@ -157,9 +157,13 @@ export async function recoverExpiredReservation(
     const saved = receipt(await previous(), hash);
     if (saved) return result(saved, true);
     const order = await current();
-    if (!order) throw new ReservationRecoveryError("not_found");
-    if (!eligible(order, input.expectedVersion, now))
-      throw new ReservationRecoveryError("conflict");
+    if (!order || !eligible(order, input.expectedVersion, now)) {
+      // An identical request can commit between the first receipt read and
+      // this order read. Prefer its durable receipt over a stale conflict.
+      const concurrentlyCommitted = receipt(await previous(), hash);
+      if (concurrentlyCommitted) return result(concurrentlyCommitted, true);
+      throw new ReservationRecoveryError(order ? "conflict" : "not_found");
+    }
     try {
       await db.batch([
         db
@@ -186,9 +190,11 @@ export async function recoverExpiredReservation(
       const committed = receipt(await previous(), hash);
       if (committed) return result(committed, true);
       const latest = await current();
-      if (!latest) throw new ReservationRecoveryError("not_found");
-      if (!eligible(latest, input.expectedVersion, now))
-        throw new ReservationRecoveryError("conflict");
+      if (!latest || !eligible(latest, input.expectedVersion, now)) {
+        const concurrentlyCommitted = receipt(await previous(), hash);
+        if (concurrentlyCommitted) return result(concurrentlyCommitted, true);
+        throw new ReservationRecoveryError(latest ? "conflict" : "not_found");
+      }
       throw new ReservationRecoveryError("unavailable");
     }
     return result(
