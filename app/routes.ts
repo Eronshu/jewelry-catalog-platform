@@ -12,6 +12,10 @@ export default [
   route("admin", "routes/admin.tsx"),
   route("admin/commerce/review", "routes/admin-commerce-review.ts"),
   route(
+    "admin/commerce/reservations/recover",
+    "routes/admin-commerce-recover.ts",
+  ),
+  route(
     "admin/commerce/reservations",
     "routes/admin-commerce-reservations.tsx",
   ),
