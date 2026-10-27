@@ -19,6 +19,7 @@ import {
   reserveTestOrder,
 } from "./orders.server";
 import {
+  lookupReservationRecovery,
   recoverExpiredReservation,
   type ReservationRecoveryInput,
 } from "./reservation-recovery.server";
@@ -101,6 +102,11 @@ beforeAll(async () => {
   await connect();
   legacy = await reserved();
   beforeUpgrade = await snapshot(legacy);
+  // A 0007 database cannot establish a durable recovery receipt.
+  expect(
+    await lookupReservationRecovery(db, actor, input(legacy.order.id)),
+  ).toEqual({ state: "unavailable" });
+  expect(await snapshot(legacy)).toEqual(beforeUpgrade);
   await platform.dispose();
   copyFileSync(
     join(root, "migrations/0008_commerce_reservation_recovery.sql"),
@@ -236,6 +242,78 @@ function wrap(beforeBatch: () => Promise<unknown>, loseResponse = false) {
 }
 
 describe("operator recovery atomicity and audit on migrated local D1", () => {
+  it("reads only durable matching receipts, preserving commands, audit, orders and inventory", async () => {
+    const item = await reserved();
+    const command = input(item.order.id);
+    const tables = [
+      "commerce_commands",
+      "commerce_reservation_recoveries",
+      "commerce_orders",
+      "commerce_order_transitions",
+      "commerce_inventory",
+      "commerce_stock_movements",
+    ];
+    const allRecords = () =>
+      Promise.all(
+        tables.map(
+          async (table) =>
+            (await db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all())
+              .results,
+        ),
+      );
+    const absentBefore = await allRecords();
+    expect(await lookupReservationRecovery(db, actor, command)).toEqual({
+      state: "not_recorded",
+    });
+    expect(await allRecords()).toEqual(absentBefore);
+    const original = await recoverExpiredReservation(
+      db,
+      actor,
+      command,
+      item.order.reserveUntil,
+    );
+    const before = await allRecords();
+    expect(await lookupReservationRecovery(db, actor, command)).toEqual({
+      state: "recorded",
+      receipt: { ...original, replayed: true },
+    });
+    expect(
+      await lookupReservationRecovery(
+        db,
+        { ...actor, sub: "another-approved-human" },
+        command,
+      ),
+    ).toEqual({ state: "conflict" });
+    expect(
+      await lookupReservationRecovery(db, actor, {
+        ...command,
+        expectedVersion: 2,
+      }),
+    ).toEqual({ state: "conflict" });
+    const otherReference = `order-${"0".repeat(36)}`;
+    expect(
+      await lookupReservationRecovery(db, actor, {
+        ...command,
+        reference: otherReference,
+        confirmation: otherReference,
+      }),
+    ).toEqual({ state: "conflict" });
+    expect(
+      await lookupReservationRecovery(db, actor, {
+        ...command,
+        requestId: crypto.randomUUID(),
+      }),
+    ).toEqual({ state: "not_recorded" });
+    const outage = {
+      prepare() {
+        throw new Error("private receipt outage");
+      },
+    } as unknown as D1Database;
+    expect(await lookupReservationRecovery(outage, actor, command)).toEqual({
+      state: "unavailable",
+    });
+    expect(await allRecords()).toEqual(before);
+  });
   it("upgrades an existing reservation without changing stock, order or history", async () => {
     expect(await snapshot(legacy)).toEqual(beforeUpgrade);
     const result = await recoverExpiredReservation(

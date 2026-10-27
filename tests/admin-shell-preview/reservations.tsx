@@ -63,12 +63,44 @@ fixtureDetail.result.order = {
   version: 2,
   reasons: [],
 };
+export const fixtureEligibleDetail: Extract<
+  ReservationReviewView,
+  { kind: "detail" }
+> = {
+  ...fixtureDetail,
+  result: {
+    ...fixtureDetail.result,
+    order: fixtureList.result.items[0],
+    history: [],
+    historyTruncated: false,
+  },
+};
+export const fixtureRecoveredDetail: Extract<
+  ReservationReviewView,
+  { kind: "detail" }
+> = {
+  ...fixtureDetail,
+  result: {
+    ...fixtureDetail.result,
+    history: [
+      {
+        kind: "expire",
+        occurredAt: now - 60000,
+        expectedVersion: 1,
+        recovery: { reason: "overdue_unpaid", resultingVersion: 2 },
+      },
+    ],
+    historyTruncated: false,
+  },
+};
 
 export function reservationFixtureLoader({
   request,
 }: Pick<LoaderFunctionArgs, "request">): ReservationReviewView {
   const params = new URL(request.url).searchParams;
   const scene = params.get("scene");
+  if (scene === "eligible") return fixtureEligibleDetail;
+  if (scene === "recovered") return fixtureRecoveredDetail;
   if (scene === "error")
     return {
       kind: "error",
@@ -114,8 +146,19 @@ export function ReservationPreview() {
         </Link>
         <Link to={`${reservationReviewPath}?scene=empty`}>Empty</Link>
         <Link to={`${reservationReviewPath}?scene=error`}>Unavailable</Link>
+        <Link to={`${reservationReviewPath}?scene=eligible`}>
+          Eligible confirmation
+        </Link>
+        <Link to={`${reservationReviewPath}?scene=recovered`}>
+          Recorded recovery audit
+        </Link>
         <Link to="/">Other Admin fixtures</Link>
       </nav>
+      <p className="admin-main reservation-help">
+        Presentation fixture only. Recovery and receipt endpoints are not
+        connected here; this preview cannot verify writes, authorization or
+        database state.
+      </p>
     </>
   );
 }

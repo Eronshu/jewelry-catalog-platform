@@ -702,6 +702,38 @@ a {
 .reservation-history span {
   display: block;
 }
+.reservation-recovery-form label {
+  display: grid;
+  gap: 0.5rem;
+}
+.reservation-recovery-form input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem;
+  border: 1px solid #99948d;
+  font: inherit;
+  font-size: 1rem;
+}
+.reservation-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.reservation-recovery-actions button,
+.reservation-recovery-form button {
+  max-width: 100%;
+  white-space: normal;
+}
+.reservation-recovery-status:not(:empty) {
+  margin-block: 1rem;
+  padding: 1rem;
+  border-left: 4px solid #681c29;
+  background: #faf8f4;
+}
+.reservation-recovery-status:focus {
+  outline-offset: 0.25rem;
+}
 @media (max-width: 47.999rem) {
   .reservation-facts {
     grid-template-columns: 1fr;

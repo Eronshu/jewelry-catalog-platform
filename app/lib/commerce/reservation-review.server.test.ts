@@ -15,6 +15,7 @@ import {
   inspectReservation,
   listReservationReview,
 } from "./reservation-review.server";
+import { recoverExpiredReservation } from "./reservation-recovery.server";
 
 const now = 1_800_000_000_000;
 const root = resolve(process.cwd());
@@ -67,6 +68,72 @@ afterAll(async () => {
 });
 
 describe("reservation review minimal projections on real local D1", () => {
+  it("distinguishes audited manual recovery from ordinary expiry without exposing actor or command hashes", async () => {
+    const owner = "c".repeat(64);
+    async function reserved() {
+      const quote = await createTestQuote(
+        db,
+        owner,
+        [{ variantId: "review-variant", quantity: 1 }],
+        "pickup",
+        now,
+      );
+      return reserveTestOrder(db, owner, quote.id, now + 1);
+    }
+    const manual = await reserved();
+    const ordinary = await reserved();
+    await recoverExpiredReservation(
+      db,
+      {
+        email: "fictional-review@example.invalid",
+        sub: "fictional-review-actor",
+      },
+      {
+        requestId: crypto.randomUUID(),
+        reference: manual.id,
+        confirmation: manual.id,
+        expectedVersion: 1,
+        reason: "overdue_unpaid",
+      },
+      manual.reserveUntil,
+    );
+    await releaseTestOrder(
+      db,
+      owner,
+      ordinary.id,
+      "expire",
+      ordinary.reserveUntil,
+    );
+    const before = (await db.prepare("SELECT * FROM commerce_inventory").all())
+      .results;
+    const recovered = await inspectReservation(
+      db,
+      manual.id,
+      manual.reserveUntil + 1,
+    );
+    const expired = await inspectReservation(
+      db,
+      ordinary.id,
+      ordinary.reserveUntil + 1,
+    );
+    expect(recovered?.history).toEqual([
+      {
+        kind: "expire",
+        occurredAt: manual.reserveUntil,
+        expectedVersion: 1,
+        recovery: { reason: "overdue_unpaid", resultingVersion: 2 },
+      },
+    ]);
+    expect(expired?.history).toEqual([
+      { kind: "expire", occurredAt: ordinary.reserveUntil, expectedVersion: 1 },
+    ]);
+    expect(JSON.stringify({ recovered, expired })).not.toMatch(
+      /actor|command|fictional-review@example|fictional-review-actor|requestHash|request_hash/,
+    );
+    expect(
+      (await db.prepare("SELECT * FROM commerce_inventory").all()).results,
+    ).toEqual(before);
+  });
   it("pages across owners, inspects without session, preserves stock and redacts sensitive snapshots", async () => {
     const orders: Array<{ order: TestOrder; owner: string }> = [];
     for (let index = 0; index < 30; index++) {

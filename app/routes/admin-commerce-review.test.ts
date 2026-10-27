@@ -4,7 +4,19 @@ import {
   useLoaderData,
 } from "react-router";
 import { createElement } from "react";
+import { execFileSync } from "node:child_process";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { getPlatformProxy, type PlatformProxy } from "wrangler";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { cloudflareContext } from "../cloudflare-context";
 import { adminPrincipalContext } from "../lib/auth/admin-access.server";
@@ -13,6 +25,15 @@ import * as ReviewRoute from "./admin-commerce-review";
 import * as ScreenRoute from "./admin-commerce-reservations";
 import * as RecoverRoute from "./admin-commerce-recover";
 import handleDocument from "../entry.server";
+import { applyStockCommand } from "../lib/commerce/inventory.server";
+import {
+  createTestQuote,
+  reserveTestOrder,
+} from "../lib/commerce/orders.server";
+import {
+  recoverExpiredReservation,
+  type ReservationRecoveryInput,
+} from "../lib/commerce/reservation-recovery.server";
 
 const origin = "http://127.0.0.1:8792";
 const issuer = "https://review-fixture.cloudflareaccess.com";
@@ -481,6 +502,45 @@ describe("Worker → React Router reservation-review authorization", () => {
     "?after=not-json",
     "?after=%7B%7D",
     "?reference=bad&after=%7B%7D",
+    "?requestId=00000000-0000-4000-8000-000000000001&expectedVersion=1",
+    "?reference=order-00000000-0000-0000-0000-000000000001&requestId=00000000-0000-4000-8000-000000000001",
+    "?reference=order-00000000-0000-0000-0000-000000000001&expectedVersion=1",
+    ...[
+      "0",
+      "01",
+      "1.0",
+      "1e0",
+      "+1",
+      "-1",
+      "9007199254740991",
+      "9007199254740992",
+      "",
+    ].map(
+      (version) =>
+        `?reference=order-00000000-0000-0000-0000-000000000001&requestId=00000000-0000-4000-8000-000000000001&expectedVersion=${encodeURIComponent(version)}`,
+    ),
+    ...[
+      "bad",
+      "00000000-0000-1000-8000-000000000001",
+      "00000000-0000-4000-7000-000000000001",
+      "",
+    ].map(
+      (requestId) =>
+        `?reference=order-00000000-0000-0000-0000-000000000001&requestId=${requestId}&expectedVersion=1`,
+    ),
+    ...[
+      "&requestId=00000000-0000-4000-8000-000000000001",
+      "&expectedVersion=1",
+      "&reference=order-00000000-0000-0000-0000-000000000001",
+      "&after=%7B%7D",
+      "&actor=private",
+      "&confirmation=yes",
+      "&reason=overdue_unpaid",
+    ].map(
+      (extra) =>
+        `?reference=order-00000000-0000-0000-0000-000000000001&requestId=00000000-0000-4000-8000-000000000001&expectedVersion=1${extra}`,
+    ),
+    "?reference=bad&requestId=00000000-0000-4000-8000-000000000001&expectedVersion=1",
   ])("rejects invalid filters before D1: %s", async (query) => {
     const prepare = vi.fn();
     const batch = vi.fn();
@@ -667,5 +727,303 @@ describe("Worker → React Router reservation-review authorization", () => {
     expect(body).toContain("temporarily unavailable");
     expect(body).not.toContain("private connection details");
     expect(failed.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+});
+
+describe("Worker → React Router read-only receipts on real isolated D1", () => {
+  let directory: string;
+  let platform: PlatformProxy<Env>;
+  let db: D1Database;
+  let command: ReservationRecoveryInput;
+  let recorded: Awaited<ReturnType<typeof recoverExpiredReservation>>;
+  let missingMigration: { status: number; body: string; unchanged: boolean };
+  const query = () =>
+    new URLSearchParams({
+      reference: command.reference,
+      requestId: command.requestId,
+      expectedVersion: String(command.expectedVersion),
+    });
+  const path = () => `/admin/commerce/review?${query()}`;
+  const tables = [
+    "commerce_commands",
+    "commerce_orders",
+    "commerce_order_transitions",
+    "commerce_inventory",
+    "commerce_stock_movements",
+  ];
+  async function snapshot(withAudit = true) {
+    return Promise.all(
+      [
+        ...tables,
+        ...(withAudit ? ["commerce_reservation_recoveries"] : []),
+      ].map(
+        async (table) =>
+          (await db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all())
+            .results,
+      ),
+    );
+  }
+  beforeAll(async () => {
+    const root = resolve(process.cwd());
+    directory = mkdtempSync(join(tmpdir(), "jewelry-worker-receipt-"));
+    const migrations = join(directory, "migrations");
+    mkdirSync(migrations);
+    for (const file of readdirSync(join(root, "migrations")).filter(
+      (file) => file.endsWith(".sql") && file < "0008",
+    ))
+      copyFileSync(join(root, "migrations", file), join(migrations, file));
+    const configPath = join(directory, "wrangler.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        name: "fictional-read-receipt-test",
+        compatibility_date: "2026-09-29",
+        d1_databases: [
+          {
+            binding: "DB",
+            database_name: "fictional-read-receipt-local",
+            migrations_dir: "migrations",
+            migrations_table: "catalog_migrations",
+          },
+        ],
+      }),
+    );
+    function migrate() {
+      execFileSync(
+        join(root, "node_modules/.bin/wrangler"),
+        [
+          "d1",
+          "migrations",
+          "apply",
+          "DB",
+          "--config",
+          configPath,
+          "--local",
+          "--persist-to",
+          join(directory, "state"),
+        ],
+        {
+          env: {
+            ...process.env,
+            CI: "1",
+            WRANGLER_SEND_METRICS: "false",
+            WRANGLER_LOG_PATH: join(directory, "wrangler.log"),
+          },
+          stdio: "pipe",
+          timeout: 20000,
+        },
+      );
+    }
+    async function connect() {
+      platform = await getPlatformProxy<Env>({
+        configPath,
+        envFiles: [],
+        persist: { path: join(directory, "state/v3") },
+        remoteBindings: false,
+      });
+      db = platform.env.DB;
+    }
+    migrate();
+    await connect();
+    await db.exec(`INSERT INTO products(id,name,slug,price_cents,quantity,category_id,status,created_at,updated_at) VALUES(1,'Fictional receipt','fictional-receipt',2500,0,1,'draft',1,1);
+      INSERT INTO product_images(product_id,r2_key,sort_order,created_at) VALUES(1,'fictional/receipt.jpg',0,1);
+      UPDATE products SET status='available' WHERE id=1;
+      INSERT INTO commerce_variants(id,product_id,sku,colour,size_description,price_cents,active) VALUES('receipt-variant',1,'receipt-sku','Gold-tone','Fictional size',2500,1);`);
+    const now = 1_800_000_000_000;
+    await applyStockCommand(
+      db,
+      "receipt-fixture",
+      [
+        {
+          variantId: "receipt-variant",
+          kind: "receive",
+          quantity: 10,
+          reason: "Fictional receipt",
+        },
+      ],
+      now,
+    );
+    const owner = "a".repeat(64);
+    const quote = await createTestQuote(
+      db,
+      owner,
+      [{ variantId: "receipt-variant", quantity: 1 }],
+      "pickup",
+      now,
+    );
+    const order = await reserveTestOrder(db, owner, quote.id, now + 1);
+    command = {
+      requestId: crypto.randomUUID(),
+      reference: order.id,
+      confirmation: order.id,
+      expectedVersion: 1,
+      reason: "overdue_unpaid",
+    };
+    const before = await snapshot(false);
+    const response = await throughWorker(db, await jwt(), "GET", path());
+    missingMigration = {
+      status: response.status,
+      body: await response.text(),
+      unchanged:
+        JSON.stringify(await snapshot(false)) === JSON.stringify(before),
+    };
+    await platform.dispose();
+    copyFileSync(
+      join(root, "migrations/0008_commerce_reservation_recovery.sql"),
+      join(migrations, "0008_commerce_reservation_recovery.sql"),
+    );
+    migrate();
+    await connect();
+    recorded = await recoverExpiredReservation(
+      db,
+      human,
+      command,
+      order.reserveUntil,
+    );
+  }, 30_000);
+  afterAll(async () => {
+    await platform?.dispose();
+    if (directory) rmSync(directory, { recursive: true, force: true });
+  });
+  it("fails closed without migration 0008 and leaves the old reservation untouched", () => {
+    expect(missingMigration).toEqual({
+      status: 503,
+      body: "Local review temporarily unavailable",
+      unchanged: true,
+    });
+  });
+  it("returns the exact original receipt and safe recovery history without any write", async () => {
+    const before = await snapshot();
+    const response = await throughWorker(db, await jwt(), "GET", path());
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+    const detail = await response.json();
+    expect(detail).toHaveProperty("recoveryLookup", {
+      state: "recorded",
+      receipt: { ...recorded, replayed: true },
+    });
+    expect(detail).toHaveProperty("history", [
+      {
+        kind: "expire",
+        occurredAt: recorded.recordedAt,
+        expectedVersion: 1,
+        recovery: { reason: "overdue_unpaid", resultingVersion: 2 },
+      },
+    ]);
+    expect(JSON.stringify(detail)).not.toMatch(
+      /actor_hash|actorHash|request_hash|requestHash|owner_hash|snapshot|reviewer@example|fictional-human/,
+    );
+    const plain = await throughWorker(
+      db,
+      await jwt(),
+      "GET",
+      `/admin/commerce/review?reference=${command.reference}`,
+    );
+    expect(await plain.json()).not.toHaveProperty("recoveryLookup");
+    expect(await snapshot()).toEqual(before);
+  });
+  it("reports missing receipts and actor/payload conflicts as observations without attempting recovery", async () => {
+    const before = await snapshot();
+    for (const [changes, state] of [
+      [{ requestId: crypto.randomUUID() }, "not_recorded"],
+      [{ expectedVersion: "2" }, "conflict"],
+    ] as const) {
+      const params = query();
+      for (const [key, value] of Object.entries(changes))
+        params.set(key, value);
+      const response = await throughWorker(
+        db,
+        await jwt(),
+        "GET",
+        `/admin/commerce/review?${params}`,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toHaveProperty("recoveryLookup", { state });
+    }
+    // A second trusted principal is permitted to review but cannot claim the first actor's receipt.
+    const other = {
+      email: "other-approved@example.invalid",
+      sub: "other-approved-human",
+    };
+    const response = await handleWorkerRequest(
+      new Request(origin + path(), {
+        headers: { "Cf-Access-Jwt-Assertion": await jwt(other) },
+      }),
+      {
+        ...env(db),
+        ADMIN_IDENTITY_PAIRS: JSON.stringify([human, other]),
+      } as Env,
+      {} as ExecutionContext,
+      handler,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toHaveProperty("recoveryLookup", {
+      state: "conflict",
+    });
+    expect(await snapshot()).toEqual(before);
+  });
+  it("reports receipt read outages without exposing failure details or changing records", async () => {
+    const before = await snapshot();
+    const outage = {
+      prepare(sql: string) {
+        if (sql.includes("FROM commerce_commands c"))
+          throw new Error("private receipt-read outage");
+        return db.prepare(sql);
+      },
+      batch: db.batch.bind(db),
+    };
+    const response = await throughWorker(outage, await jwt(), "GET", path());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toHaveProperty("recoveryLookup", {
+      state: "unavailable",
+    });
+    expect(await snapshot()).toEqual(before);
+  });
+  it("keeps the trusted Admin, local and GET-only boundaries ahead of all receipt storage", async () => {
+    const prepare = vi.fn();
+    const batch = vi.fn();
+    for (const [assertion, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "unapproved" }), 403],
+      [await jwt({ common_name: "service" }), 401],
+    ] as const)
+      expect(
+        (await throughWorker({ prepare, batch }, assertion, "GET", path()))
+          .status,
+      ).toBe(status);
+    expect(
+      (
+        await throughWorker(
+          { prepare, batch },
+          await jwt(),
+          "GET",
+          path(),
+          false,
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await throughWorker(
+          { prepare, batch },
+          await jwt(),
+          "GET",
+          path(),
+          true,
+          "https://shop.example.invalid",
+        )
+      ).status,
+    ).toBe(404);
+    const method = await throughWorker(
+      { prepare, batch },
+      await jwt(),
+      "POST",
+      path(),
+    );
+    expect(method.status).toBe(405);
+    expect(method.headers.get("Allow")).toBe("GET");
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
   });
 });

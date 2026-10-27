@@ -9,6 +9,16 @@ type Header = {
   reserveUntil: number;
   version: number;
 };
+type ReviewHistory = {
+  kind: string;
+  occurredAt: number;
+  expectedVersion: number;
+  recovery?: { reason: "overdue_unpaid"; resultingVersion: number };
+};
+type HistoryRow = Omit<ReviewHistory, "recovery"> & {
+  recoveryReason: "overdue_unpaid" | null;
+  recoveryExpectedVersion: number | null;
+};
 export class ReservationReviewError extends Error {
   constructor(public readonly code: "invalid_request" | "unavailable") {
     super("Local reservation review unavailable");
@@ -103,9 +113,12 @@ export async function inspectReservation(
         .bind(orderId),
       db
         .prepare(
-          `SELECT kind, occurred_at AS occurredAt, expected_version AS expectedVersion
-        FROM commerce_order_transitions WHERE order_id = ?
-        ORDER BY occurred_at DESC, command_id DESC LIMIT 26`,
+          `SELECT t.kind, t.occurred_at AS occurredAt, t.expected_version AS expectedVersion,
+        r.reason AS recoveryReason, r.expected_version AS recoveryExpectedVersion
+        FROM commerce_order_transitions t
+        LEFT JOIN commerce_reservation_recoveries r ON r.command_id = t.command_id AND r.order_id = t.order_id
+        WHERE t.order_id = ?
+        ORDER BY t.occurred_at DESC, t.command_id DESC LIMIT 26`,
         )
         .bind(orderId),
     ]);
@@ -121,11 +134,30 @@ export async function inspectReservation(
         variantId: string;
         quantity: number;
       }>,
-      history: history.results.slice(0, 25) as Array<{
-        kind: string;
-        occurredAt: number;
-        expectedVersion: number;
-      }>,
+      history: (history.results as HistoryRow[])
+        .slice(0, 25)
+        .map(
+          ({
+            kind,
+            occurredAt,
+            expectedVersion,
+            recoveryReason,
+            recoveryExpectedVersion,
+          }): ReviewHistory => ({
+            kind,
+            occurredAt,
+            expectedVersion,
+            ...(recoveryReason === "overdue_unpaid" &&
+            recoveryExpectedVersion !== null
+              ? {
+                  recovery: {
+                    reason: recoveryReason,
+                    resultingVersion: recoveryExpectedVersion + 1,
+                  },
+                }
+              : {}),
+          }),
+        ),
       historyTruncated: history.results.length > 25,
     };
   } catch {
