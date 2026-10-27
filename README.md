@@ -25,15 +25,20 @@ website and currently runs as **Velaform Studio**, a fictional portfolio demo.
   generated binaries are not committed.
 - Automated formatting, lint, type checks, tests, and a production build in CI.
 
-The intended V1 is a catalog that directs interested customers to the owner's
-sales channel. Cart, checkout, payments, shipping, and order management are not
-implemented. The full scope and architecture are in
+The public demo remains a catalog that directs interested customers to the
+owner's sales channel. Separate local-only work now includes a cart, delivery
+form/test quotes, lab reservations and protected operator review/recovery
+commands. Customer checkout is not bound to a payable order; hosted payments
+and the complete operating workflow are not implemented. The full V1 scope and architecture are in
 [PROJECT_SPEC.md](./PROJECT_SPEC.md); demo data and cleanup are documented in
 [docs/PORTFOLIO_DEMO.md](./docs/PORTFOLIO_DEMO.md). The owner's draft
 requirements for a future real-sales phase are in
 [docs/ONLINE_SALES_REQUIREMENTS.md](./docs/ONLINE_SALES_REQUIREMENTS.md),
 with a platform comparison and implementation plan in
 [docs/ONLINE_SALES_IMPLEMENTATION_PLAN.md](./docs/ONLINE_SALES_IMPLEMENTATION_PLAN.md).
+The ordered remaining work, business dependencies and release gates are in
+[the commerce launch roadmap](./docs/COMMERCE_LAUNCH_ROADMAP.md). A merged local
+feature does not mean the public demo is ready to accept purchases.
 An isolated [local payment sandbox](./docs/PAYMENT_SANDBOX_SPIKE.md) can be used
 to compare Stripe and PayPal test flows without changing the live catalog.
 
