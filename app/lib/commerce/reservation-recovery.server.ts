@@ -16,6 +16,20 @@ export type ReservationRecoveryInput = {
   confirmation: string;
   reason: "overdue_unpaid";
 };
+export type ReservationRecoveryReceipt = {
+  testOnly: true;
+  requestId: string;
+  reference: string;
+  expectedVersion: number;
+  recordedAt: number;
+  resultingVersion: number;
+  replayed: boolean;
+};
+export type ReservationRecoveryLookup =
+  | { state: "recorded"; receipt: ReservationRecoveryReceipt }
+  | { state: "not_recorded" }
+  | { state: "conflict" }
+  | { state: "unavailable" };
 type Receipt = {
   reference: string;
   expectedVersion: number;
@@ -105,15 +119,10 @@ function eligible(order: Current, version: number, now: number) {
   );
 }
 
-// Internal primitive. The route must establish an approved-human principal,
-// local isolated binding, same-origin POST and explicit confirmation first.
-export async function recoverExpiredReservation(
-  db: D1Database,
+async function recoveryHashes(
   actor: AdminPrincipal,
   input: ReservationRecoveryInput,
-  now = Date.now(),
 ) {
-  validate(input, actor, now);
   const actorHash = await commandHash({
     kind: "admin-recovery-actor-v1",
     email: actor.email,
@@ -128,16 +137,75 @@ export async function recoverExpiredReservation(
     confirmation: input.confirmation,
     reason: input.reason,
   });
-  const commandId = `recovery-${input.requestId}`;
-  const previous = () =>
-    db
-      .prepare(
-        `SELECT c.request_hash AS requestHash, r.order_id AS reference,
+  return { actorHash, hash };
+}
+function previousRecovery(db: D1Database, commandId: string) {
+  return db
+    .prepare(
+      `SELECT c.request_hash AS requestHash, r.order_id AS reference,
     r.expected_version AS expectedVersion, r.occurred_at AS recordedAt
     FROM commerce_commands c LEFT JOIN commerce_reservation_recoveries r ON r.command_id = c.id WHERE c.id = ?`,
-      )
-      .bind(commandId)
-      .first<Previous>();
+    )
+    .bind(commandId)
+    .first<Previous>();
+}
+function recoveryReceipt(
+  requestId: string,
+  saved: Receipt,
+  replayed: boolean,
+): ReservationRecoveryReceipt {
+  return {
+    testOnly: true,
+    requestId,
+    ...saved,
+    resultingVersion: saved.expectedVersion + 1,
+    replayed,
+  };
+}
+
+// A receipt lookup never attempts recovery. Absence is only this read's
+// observation; it does not prove that an uncertain command failed to commit.
+// Callers must establish the same approved-human and isolated-local boundary.
+export async function lookupReservationRecovery(
+  db: D1Database,
+  actor: AdminPrincipal,
+  input: ReservationRecoveryInput,
+): Promise<ReservationRecoveryLookup> {
+  validate(input, actor, Date.now());
+  try {
+    const { hash } = await recoveryHashes(actor, input);
+    const saved = receipt(
+      await previousRecovery(db, `recovery-${input.requestId}`),
+      hash,
+    );
+    return saved
+      ? {
+          state: "recorded",
+          receipt: recoveryReceipt(input.requestId, saved, true),
+        }
+      : { state: "not_recorded" };
+  } catch (error) {
+    return {
+      state:
+        error instanceof ReservationRecoveryError && error.code === "conflict"
+          ? "conflict"
+          : "unavailable",
+    };
+  }
+}
+
+// Internal primitive. The route must establish an approved-human principal,
+// local isolated binding, same-origin POST and explicit confirmation first.
+export async function recoverExpiredReservation(
+  db: D1Database,
+  actor: AdminPrincipal,
+  input: ReservationRecoveryInput,
+  now = Date.now(),
+) {
+  validate(input, actor, now);
+  const { actorHash, hash } = await recoveryHashes(actor, input);
+  const commandId = `recovery-${input.requestId}`;
+  const previous = () => previousRecovery(db, commandId);
   const current = () =>
     db
       .prepare(
@@ -146,13 +214,8 @@ export async function recoverExpiredReservation(
       )
       .bind(input.reference)
       .first<Current>();
-  const result = (saved: Receipt, replayed: boolean) => ({
-    testOnly: true as const,
-    requestId: input.requestId,
-    ...saved,
-    resultingVersion: saved.expectedVersion + 1,
-    replayed,
-  });
+  const result = (saved: Receipt, replayed: boolean) =>
+    recoveryReceipt(input.requestId, saved, replayed);
   try {
     const saved = receipt(await previous(), hash);
     if (saved) return result(saved, true);

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Form, Link, useNavigation, useRevalidator } from "react-router";
 import type { ReservationReviewView } from "../../lib/commerce/reservation-review-request.server";
 import { AdminShell } from "./admin-shell";
+import { ReservationRecovery } from "./reservation-recovery";
 
 export const reservationReviewPath = "/admin/commerce/reservations";
 type Order = Extract<
@@ -141,7 +142,7 @@ export function ReservationReview({ view }: { view: ReservationReviewView }) {
       <div className="reservation-review">
         <div className="admin-page-heading">
           <div>
-            <p className="admin-kicker">Local test · Read only</p>
+            <p className="admin-kicker">Local test · Reservation review</p>
             <h1 tabIndex={-1} ref={heading}>
               Test reservation review
             </h1>
@@ -165,8 +166,9 @@ export function ReservationReview({ view }: { view: ReservationReviewView }) {
           <strong>Fictional orders only. No real payment.</strong>
           <p>
             Viewing or refreshing never changes stock, payments or orders.
-            Customer details and payment credentials are not shown. This is not
-            a customer checkout or a recovery tool.
+            Customer details and payment credentials are not shown. A separate,
+            explicitly confirmed action is available only for an eligible
+            expired unpaid test order. This is not a customer checkout.
           </p>
         </aside>
         <Form
@@ -282,6 +284,13 @@ export function ReservationReview({ view }: { view: ReservationReviewView }) {
                   Record version: {detail.order.version}
                 </p>
               </section>
+              <ReservationRecovery
+                key={detail.order.id}
+                order={detail.order}
+                lineCount={detail.lines.length}
+                observedAt={detail.observedAt}
+                reviewBusy={busy}
+              />
               <section
                 className="reservation-card"
                 aria-labelledby="reservation-items-title"
@@ -313,12 +322,16 @@ export function ReservationReview({ view }: { view: ReservationReviewView }) {
                     {detail.history.map((event, index) => (
                       <li key={index}>
                         <strong>
-                          {historyLabels[event.kind] ??
-                            "Recorded change — ask the developer"}
+                          {event.recovery
+                            ? "Operator confirmed expired unpaid reservation"
+                            : (historyLabels[event.kind] ??
+                              "Recorded change — ask the developer")}
                         </strong>
                         <span>
                           <ReviewTime value={event.occurredAt} /> · Previous
                           record version: {event.expectedVersion}
+                          {event.recovery &&
+                            ` → ${event.recovery.resultingVersion}`}
                         </span>
                       </li>
                     ))}

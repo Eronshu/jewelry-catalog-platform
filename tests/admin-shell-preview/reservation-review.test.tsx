@@ -17,6 +17,7 @@ import type { ReservationReviewView } from "../../app/lib/commerce/reservation-r
 
 let root: Root;
 beforeEach(() => {
+  sessionStorage.clear();
   document.body.innerHTML = '<div id="test-root"></div>';
   root = createRoot(document.getElementById("test-root")!);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -208,4 +209,17 @@ it("hides the local-only Admin entry unless the local availability flag is set",
   expect(anchor("Review test reservations")?.getAttribute("href")).toBe(
     reservationReviewPath,
   );
+});
+it("offers confirmation only in exact eligible detail, and separates operator recovery from ordinary expiry", async () => {
+  const router = await open(`${reservationReviewPath}?scene=eligible`);
+  expect(document.querySelector("#recovery-confirmation")).not.toBeNull();
+  expect(button("Confirm cancellation and release").disabled).toBe(true);
+  await act(async () =>
+    router.navigate(`${reservationReviewPath}?scene=recovered`),
+  );
+  expect(document.querySelector("#recovery-confirmation")).toBeNull();
+  expect(document.body.textContent).toContain(
+    "Operator confirmed expired unpaid reservation",
+  );
+  expect(document.body.textContent).toContain("1 → 2");
 });

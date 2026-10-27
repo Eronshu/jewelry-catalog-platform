@@ -13,4 +13,5 @@
 - Mobile Safari is a first-class supported platform.
 - Destructive production actions require explicit human approval.
 - Finish one reviewable task per feature branch: commit, open a PR, then wait for CI and review. Do not add the next task before that PR is reviewed and merged. Start the next task from updated main.
+- The user has delegated merging small, focused local-development/documentation PRs after the current head passes CI and independent review with no unresolved findings. Verify the reviewed head at merge, check the merged tree, archive unique local commits/files before branch cleanup, and update main before starting the next task. This does not authorize deployment, production resources, billing, live payments or business-policy decisions.
 - Follow `docs/COMMERCE_PR_SEQUENCE.md` for the existing commerce series. Never merge the original backup as a shortcut. After all four PRs are reviewed, merged and checked for omissions, user-authorized cleanup may remove the backup and old branches/worktrees; archive unique commits and uncommitted files first. Create C09b from updated main only after the series is merged.
