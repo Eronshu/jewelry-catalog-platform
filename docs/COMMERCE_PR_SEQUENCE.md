@@ -66,4 +66,4 @@
 
 #47已合并并归档。#48由用户合并至main `757ce77`；修复head `e24c1bc` 的CI67成功，本地658项应用测试/6项支付模拟及完整检查通过。原P2两个竞态修复经单独只读审查，无阻塞发现，旧讨论已附证据resolved；GitHub bot仍running不能写成完成。源 `91c4613` 已归档验证至 `.git/commerce-archive/2026-10-27-recovery-command/source.bundle`。
 
-L03a1至b2c1 #52–#58均已按准确head CI/完成的独立审查合并，历史源先归档。当前 [逐claim无网络模拟执行](./COMMERCE_PAYMENT_CORE.md) 不接真实provider/顾客订单或任务扫描，不改paid/work/库存；历史登记只恢复持久观察处理，超时后新query claim核查原虚构付款。后续a4/a5持久事件/任务基础，再接顾客金额订单闭环及实际适配。完整异常终局/重试另做，保留one-intent/order，不删日志复活CREATE。L02b、L09及#44/#37身份、真机、政策/经营门槛仍开放。
+L03a1至逐claim模拟 #52–#59均已按准确head CI/完成的独立审查合并，历史源先归档；#59 main `5988847` 的CI91通过，head `445dd03` CI90通过，CI89超时修复及delta审查见执行记录。当前 [L03a4a事件变体收件箱](./COMMERCE_PAYMENT_CORE.md) 仅保存本地fixture规范化事件，不接真实provider/顾客订单或任务扫描，不改金融事实/paid/work/库存；现有CREATE准入不读新收据。后续a4b先解决验真来源/关联/所有变体冲突与待处理事件准入，再接处理；a5事件/任务基础、顾客金额订单闭环与实际适配继续分PR。完整终局/重试另做，保留one-intent/order，不删日志复活CREATE。L02b、L09及#44/#37身份、真机、政策/经营门槛仍开放。
