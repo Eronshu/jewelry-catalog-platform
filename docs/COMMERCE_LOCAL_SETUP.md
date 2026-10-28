@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-10-27: #50 merged L01 confirmation/result/receipt lookup into main `8701e52`, after CI71/independent review; merged-main CI72 passed. This L02a branch adds only isolation design and negative authorization/configuration tests: [Sandbox boundary](./COMMERCE_SANDBOX_BOUNDARY.md). No new runtime mode, identity bypass, binding, provider or deployment is enabled. Product → cart → delivery → quote remains unconnected to payable orders. Actual Access browser, real iPhone/owner UAT and provider acceptance stay open. The ordinary runner supplies no Admin identity. Follow one checked/reviewed/merged task per branch; delegated merge is not remote-resource or payment authorization.
+Status checked 2026-10-27: L02a #51 merged into main `2022777` after head CI73/independent review; main CI74 passed. Its isolation design does not enable HTTPS Sandbox. This L03a1 feature branch adds only an internal fixture payment-start intent/lock and migration/tests; see [payment core](./COMMERCE_PAYMENT_CORE.md). No route or ordinary runner calls it or provisions its scope. The customer quote remains unconnected to a payable order/provider. Actual Access browser, Safari/UAT and both provider Sandbox gates stay open; no new mode, identity bypass, merchant credentials or remote resource is introduced.
 
 ## Availability policy
 
