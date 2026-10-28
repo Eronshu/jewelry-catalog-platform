@@ -1,4 +1,4 @@
-import { commandHash } from "./inventory.server";
+import { captureFactDescriptor } from "./capture-fact-descriptor.server";
 
 export class CaptureFactError extends Error {
   constructor(
@@ -256,13 +256,9 @@ function receipt(
   input: TestCaptureFactInput,
   proven: Proof,
   replayed: boolean,
+  amountMatch: "match" | "mismatch",
 ): TestCaptureFactReceipt | null {
   if (!saved) return null;
-  const amountMatch =
-    input.amountCents === proven.amountCents &&
-    input.currency === proven.currency
-      ? "match"
-      : "mismatch";
   if (
     saved.id !== id ||
     saved.payloadHash !== hash ||
@@ -317,21 +313,15 @@ export async function recordTestCaptureFact(
     // Always prove the current caller's historical claim before receipt lookup,
     // including replay by a different legitimate query worker.
     const proven = await proof(db, context, fact, now);
-    const identity = {
-      operation: "test-capture-identity-v1",
-      mode: context.mode,
-      instanceId: context.instanceId,
-      provider: context.provider,
-      accountRef: context.accountRef,
-      transactionRef: fact.transactionRef,
-    };
-    const id = await commandHash(identity);
-    const hash = await commandHash({
-      operation: "test-capture-payload-v1",
-      identity,
+    const {
+      id,
+      payloadHash: hash,
+      amountMatch,
+    } = await captureFactDescriptor(context, {
       attemptCommandId: proven.commandId,
       reference: proven.reference,
       providerObjectRef: fact.providerObjectRef,
+      transactionRef: fact.transactionRef,
       amountCents: fact.amountCents,
       currency: fact.currency,
       expectedAmountCents: proven.amountCents,
@@ -339,15 +329,10 @@ export async function recordTestCaptureFact(
     });
     const read = (replayed: boolean) =>
       previous(db, id, context, fact.transactionRef).then((saved) =>
-        receipt(saved, id, hash, context, fact, proven, replayed),
+        receipt(saved, id, hash, context, fact, proven, replayed, amountMatch),
       );
     const prior = await read(true);
     if (prior) return prior;
-    const amountMatch =
-      fact.amountCents === proven.amountCents &&
-      fact.currency === proven.currency
-        ? "match"
-        : "mismatch";
     try {
       await db.batch([
         db
