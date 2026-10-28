@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-10-28: L03a3a #54 merged into main `1b84d57` after head CI79/independent review; main CI80 passed. L02a isolation design does not enable HTTPS Sandbox. This L03a3b1 branch adds only normalized observation journals; observations do not change payment/order/work/inventory or prove terminal failure; see [payment core](./COMMERCE_PAYMENT_CORE.md). No route or ordinary runner calls it or provisions its scope. The customer quote remains unconnected to a payable order/provider. Actual Access browser, Safari/UAT and both provider Sandbox gates stay open; no new mode, identity bypass, merchant credentials or remote resource is introduced.
+Status checked 2026-10-28: L03a3b1 #55 merged into main `5e48107` after head CI81 and completed independent review; main CI82 passed. L02a isolation design does not enable HTTPS Sandbox. This branch adds atomic observation processing and retained exception results; it does not change payment/order/work/inventory, prove provider verification or authorize fulfillment; see [payment core](./COMMERCE_PAYMENT_CORE.md). No route or ordinary runner calls it or provisions its scope. The customer quote remains unconnected to a payable order/provider. Actual Access browser, Safari/UAT and both provider Sandbox gates stay open; no new mode, identity bypass, merchant credentials or remote resource is introduced.
 
 ## Availability policy
 
