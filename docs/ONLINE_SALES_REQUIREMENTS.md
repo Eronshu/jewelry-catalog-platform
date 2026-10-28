@@ -1,8 +1,8 @@
 # 首饰商城：业务需求与待决事项
 
-**状态同步：2026-10-28 · C路线已确定；L03a3b2a #56已合入main `db1aee6`，CI83/独立审查和main CI84通过，尚未形成营业闭环。** 已有本地选色/车/交付输入/临时报价、lab预留/取消/可选到期、Admin核对/恢复和隔离环境契约。内部fixture支付意图/订单锁、待办/领取、capture事实、观察日志及原子处理结果已合并；本轮仅实时只读排查队列，不把历史零税lab快照变成顾客可付款订单。Stripe/PayPal、履约退款/通知/对账/完整恢复与真实环境仍待验收。公开站仍是虚构作品目录。
+**状态同步：2026-10-28 · C路线已确定；L03a3b2b #57已合入main `28c06d5`，CI85/独立审查和main CI86通过，尚未形成营业闭环。** 已有本地选色/车/交付输入/临时报价、lab预留/取消/可选到期、Admin核对/恢复和隔离环境契约。内部fixture支付意图/订单锁、待办/领取、capture事实、观察日志及原子处理结果已合并；实时只读排查队列已合并，本轮仅执行开始登记，不把历史零税lab快照变成顾客可付款订单。Stripe/PayPal、履约退款/通知/对账/完整恢复与真实环境仍待验收。公开站仍是虚构作品目录。
 
-下文是业务要求/测试假设/营业门槛，不代表全部已实现。当前顺序见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务)，历史证据见 [执行记录](./COMMERCE_EXECUTION_LOG.md)。本轮按 [支付核心契约](./COMMERCE_PAYMENT_CORE.md) 查询当前异常；后续异常处置/安全重试、模拟执行器与顾客最终金额绑定另PR。真实身份、Safari/UAT、L02b/L09门槛开放；委托合并不授权正式资源、计费、真实收付款或经营政策。
+下文是业务要求/测试假设/营业门槛，不代表全部已实现。当前顺序见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务)，历史证据见 [执行记录](./COMMERCE_EXECUTION_LOG.md)。本轮按 [支付核心契约](./COMMERCE_PAYMENT_CORE.md) 做持久执行登记：不发请求，不开放重扣或库存释放。之后先做保守的一次意图/仅查询恢复模拟执行器；异常关闭、经核验重试和顾客最终金额绑定另PR。真实身份、Safari/UAT、L02b/L09门槛开放；委托合并不授权正式资源、计费、真实收付款或经营政策。
 
 本文是后续商业阶段的业务依据，不改写冻结的 [V1 规格](../PROJECT_SPEC.md)。技术模型、安全和验收见 [准备度审查](./COMMERCE_READINESS_REVIEW.md)，任务顺序见 [实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md)，选型理由和 A/B 比较见 [ADR-001](./ADR_001_COMMERCE_ROUTE_C.md)。
 
