@@ -312,55 +312,57 @@ const kinds: TestPaymentSimulatorKind[] = [
 ];
 
 describe("no-network fictional executor on real D1", () => {
-  it.each(["stripe", "paypal"] as const)(
-    "processes all six %s kinds without completing work, paying orders or moving inventory",
-    async (provider) => {
-      for (const kind of kinds) {
-        const item = await claimed(provider);
-        const before = await invariant();
-        const fake = createTestPaymentSimulator([{ kind }]);
-        const execute = vi.spyOn(fake, "execute");
-        const result = await run(item, fake);
-        expect(result).toEqual({
-          testOnly: true,
-          claimId: item.input.claimId,
-          requestId: item.input.requestId,
-          reference: item.order.id,
-          status: "observation_processed",
-          observationId: item.input.claimId,
-          replayed: false,
-        });
-        expect(Object.keys(result).sort()).toEqual(
-          [
-            "testOnly",
-            "claimId",
-            "requestId",
-            "reference",
-            "status",
-            "observationId",
-            "replayed",
-          ].sort(),
-        );
-        expect(execute).toHaveBeenCalledTimes(1);
-        expect(execute.mock.calls[0][0]).toEqual({
-          mode: "local-test",
-          instanceId,
-          provider,
-          accountRef: `fixture-${provider}`,
-          operation: "create",
-          createOperationKey: item.claim.createOperationKey,
-          amountCents: 2500,
-          currency: "CAD",
-        });
-        expect((await observations(item))[0]).toMatchObject({ kind });
-        expect(await facts(item)).toHaveLength(kind === "captured" ? 1 : 0);
-        expect(await invariant()).toEqual(before);
-        expect(await run(item, fake)).toMatchObject({
-          replayed: true,
-          status: "observation_processed",
-        });
-        expect(execute).toHaveBeenCalledTimes(1);
-      }
+  it.each(
+    (["stripe", "paypal"] as const).flatMap((provider) =>
+      kinds.map((kind) => [provider, kind] as const),
+    ),
+  )(
+    "processes %s %s without completing work, paying orders or moving inventory",
+    async (provider, kind) => {
+      const item = await claimed(provider);
+      const before = await invariant();
+      const fake = createTestPaymentSimulator([{ kind }]);
+      const execute = vi.spyOn(fake, "execute");
+      const result = await run(item, fake);
+      expect(result).toEqual({
+        testOnly: true,
+        claimId: item.input.claimId,
+        requestId: item.input.requestId,
+        reference: item.order.id,
+        status: "observation_processed",
+        observationId: item.input.claimId,
+        replayed: false,
+      });
+      expect(Object.keys(result).sort()).toEqual(
+        [
+          "testOnly",
+          "claimId",
+          "requestId",
+          "reference",
+          "status",
+          "observationId",
+          "replayed",
+        ].sort(),
+      );
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0][0]).toEqual({
+        mode: "local-test",
+        instanceId,
+        provider,
+        accountRef: `fixture-${provider}`,
+        operation: "create",
+        createOperationKey: item.claim.createOperationKey,
+        amountCents: 2500,
+        currency: "CAD",
+      });
+      expect((await observations(item))[0]).toMatchObject({ kind });
+      expect(await facts(item)).toHaveLength(kind === "captured" ? 1 : 0);
+      expect(await invariant()).toEqual(before);
+      expect(await run(item, fake)).toMatchObject({
+        replayed: true,
+        status: "observation_processed",
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
     },
   );
   it("concurrent executor calls dispatch at most one CREATE; historical registrations cannot invoke adapter", async () => {
