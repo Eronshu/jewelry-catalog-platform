@@ -1,6 +1,6 @@
 # 商城既有成果的 PR 顺序
 
-更新：2026-10-27。#46–#49已合并，当前任务从 `main` `51a890f` 建 `codex/commerce-reservation-recovery-ui`，只做L01恢复确认/结果/最小审计与只读原收据查询。#48限定范围独立审查及旧讨论处置已补齐，详情见恢复契约和执行记录。
+更新：2026-10-27。#50已合并为main `8701e52`：准确head `30a67f2` CI71/独立审查无发现，main CI72通过。源 `a4f2e2f`/代理 `c42abb0` 在 `2026-10-27-recovery-ui/source.bundle` 验证归档后清理本地分支和干净工作树；远程#49/#50分支因缺认证暂留，不冒充已删。当前从更新main建 `codex/commerce-sandbox-boundary-design`，仅L02a设计及本地拒绝测试；L02b运行模式/远程设置仍未实现。
 
 按最新 [AGENTS](../AGENTS.md)，**每完成一项可审查任务就提交、开 PR，等待当前head CI、独立审查和合并；之后从更新后的 main 开下一分支。** 用户2026-10-27明确授权代合并符合这些门槛、无未解决发现的小型本地开发/文档PR，并归档后清理。它不允许堆叠下一功能，也不授权部署、计费、真实支付或生产数据。下文保留历史提交/恢复证据，不扩大这次委托范围。
 
@@ -64,4 +64,4 @@
 
 #47已合并并归档。#48由用户合并至main `757ce77`；修复head `e24c1bc` 的CI67成功，本地658项应用测试/6项支付模拟及完整检查通过。原P2两个竞态修复经单独只读审查，无阻塞发现，旧讨论已附证据resolved；GitHub bot仍running不能写成完成。源 `91c4613` 已归档验证至 `.git/commerce-archive/2026-10-27-recovery-command/source.bundle`。
 
-[路线图](./COMMERCE_LAUNCH_ROADMAP.md) #49准确head `538fdef` 的CI69和独立审查无发现，已代合并为`51a890f`，本地源 `056efe3` 树一致，先验证归档 `2026-10-27-launch-roadmap/source.bundle` 再清理。本轮L01继续独立PR及其CI/审查门槛，之后才启动L02；恢复写入约束见 [恢复契约](./COMMERCE_RESERVATION_RECOVERY.md)。#44和#37实际身份/真机/业务验收保持开放。
+[路线图](./COMMERCE_LAUNCH_ROADMAP.md) #49与L01 #50均已按准确head CI/独立审查结果代合并，历史源先归档。本轮L02a的 [隔离契约](./COMMERCE_SANDBOX_BOUNDARY.md) 与拒绝回归独立PR；自身检查/审查/合并后才启动L03a本地支付/事件模型。L02b与L09仍需独立实现、授权和验证；#44/#37真实身份、真机、政策及经营验收保持开放。

@@ -417,6 +417,91 @@ async function throughWorker(
   );
 }
 describe("Worker → React Router reservation-review authorization", () => {
+  it.each([
+    "/admin/commerce/reservations",
+    "/admin/commerce/review.data",
+    "/admin/commerce/reservations/recover",
+    "/%61dmin/commerce/review",
+    "/ADMIN/commerce/reservations.data",
+  ])(
+    "does not promote another authority into an Admin identity on %s",
+    async (path) => {
+      const prepare = vi.fn();
+      const batch = vi.fn();
+      const routed = vi.fn(handler);
+      const candidates: Array<Record<string, string>> = [
+        { Cookie: `commerce_lab_session_v1=${"b".repeat(64)}` },
+        { Authorization: `Bearer ${"c".repeat(64)}` },
+        { "Cf-Access-Authenticated-User-Email": human.email },
+        { "X-Admin-Email": human.email, "X-Admin-Sub": human.sub },
+      ];
+      for (const headers of candidates) {
+        const response = await handleWorkerRequest(
+          new Request(origin + path, { headers }),
+          env({ prepare, batch }),
+          {} as ExecutionContext,
+          routed,
+        );
+        expect(response.status).toBe(401);
+        expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+        expect(await response.text()).not.toContain(human.email);
+      }
+      expect(routed).not.toHaveBeenCalled();
+      expect(prepare).not.toHaveBeenCalled();
+      expect(batch).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects an otherwise valid human JWT from another environment's Access application before routing", async () => {
+    const prepare = vi.fn();
+    const batch = vi.fn();
+    const routed = vi.fn(handler);
+    const response = await handleWorkerRequest(
+      new Request(origin + "/admin/commerce/reservations/recover", {
+        method: "POST",
+        headers: { "Cf-Access-Jwt-Assertion": await jwt() },
+      }),
+      {
+        ...env({ prepare, batch }),
+        ADMIN_ACCESS_AUD: "fictional-isolated-sandbox-admin-audience",
+      } as Env,
+      {} as ExecutionContext,
+      routed,
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(routed).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it.each(["sandbox", "commerce-sandbox", "live"])(
+    "does not activate existing local Admin commerce with a proposed %s mode",
+    async (mode) => {
+      const prepare = vi.fn();
+      const batch = vi.fn();
+      const assertion = await jwt();
+      for (const requestOrigin of [origin, "https://sandbox.example.invalid"])
+        for (const path of [
+          "/admin/commerce/review",
+          "/admin/commerce/reservations.data",
+          "/admin/commerce/reservations/recover",
+        ]) {
+          const response = await handleWorkerRequest(
+            new Request(requestOrigin + path, {
+              headers: { "Cf-Access-Jwt-Assertion": assertion },
+            }),
+            { ...env({ prepare, batch }), COMMERCE_MODE: mode } as Env,
+            {} as ExecutionContext,
+            handler,
+          );
+          expect(response.status).toBe(404);
+          expect(response.headers.get("Cache-Control")).toBe(
+            "private, no-store",
+          );
+        }
+      expect(prepare).not.toHaveBeenCalled();
+      expect(batch).not.toHaveBeenCalled();
+    },
+  );
   it("denies absent, unapproved human and service identities before storage", async () => {
     const prepare = vi.fn(() => {
       throw new Error("private storage");
