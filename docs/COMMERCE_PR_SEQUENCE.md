@@ -1,6 +1,6 @@
 # 商城既有成果的 PR 顺序
 
-更新：2026-10-27。L03a2a #53已合并为main `e57035e`：准确head `2bf4f4d` CI77/独立审查无发现，main CI78成功。父源 `f56ae8c`/实现 `bc09ec1` 先在 `2026-10-27-payment-work/source.bundle` 验证归档再清理。本轮从更新main建 `codex/commerce-capture-facts`，独立工作树仅写0011/事实服务/测试，父写契约；顺序整合后完整验证/独立审查/PR。远程已合并分支因认证暂留，不冒充已删。
+更新：2026-10-28。L03a3a #54已合并为main `1b84d57`：准确head `f95a387` CI79/独立审查无发现，main CI80成功。父 `72f21d4`/实现 `978fccb` 先在 `2026-10-28-capture-facts/source.bundle` 验证归档再清理。本轮从更新main建 `codex/commerce-payment-observations`，独立工作树仅写0012/观察服务/测试，父写契约；顺序整合后完整验证/独立审查/PR。远程已合并分支因缺删除认证暂留。
 
 按最新 [AGENTS](../AGENTS.md)，**每完成一项可审查任务就提交、开 PR，等待当前head CI、独立审查和合并；之后从更新后的 main 开下一分支。** 用户2026-10-27明确授权代合并符合这些门槛、无未解决发现的小型本地开发/文档PR，并归档后清理。它不允许堆叠下一功能，也不授权部署、计费、真实支付或生产数据。下文保留历史提交/恢复证据，不扩大这次委托范围。
 
@@ -64,4 +64,4 @@
 
 #47已合并并归档。#48由用户合并至main `757ce77`；修复head `e24c1bc` 的CI67成功，本地658项应用测试/6项支付模拟及完整检查通过。原P2两个竞态修复经单独只读审查，无阻塞发现，旧讨论已附证据resolved；GitHub bot仍running不能写成完成。源 `91c4613` 已归档验证至 `.git/commerce-archive/2026-10-27-recovery-command/source.bundle`。
 
-L03a1 #52、a2a #53均已准确head检查/独立审查/合并，历史源先归档。当前a3a交付 [不可变capture事实](./COMMERCE_PAYMENT_CORE.md)，不裁决订单paid或履约，不接provider；通过当前小PR后先做a3b其他观察/异常裁决，再做a2b模拟执行器。L02b、L09及#44/#37实际身份、真机、政策和业务门槛继续开放。
+L03a1 #52、a2a #53、a3a #54均已准确head检查/独立审查/合并，历史源先归档。当前a3b1交付 [规范化观察日志](./COMMERCE_PAYMENT_CORE.md)，不裁决paid/履约或改经济事实，不接provider；通过后先做b2处理结果/异常，再做a2b模拟执行器。L02b、L09及#44/#37实际身份、真机、政策和业务门槛继续开放。
