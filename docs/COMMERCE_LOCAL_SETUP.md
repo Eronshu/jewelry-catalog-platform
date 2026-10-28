@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-10-27: L02a #51 merged into main `2022777` after head CI73/independent review; main CI74 passed. Its isolation design does not enable HTTPS Sandbox. This L03a1 feature branch adds only an internal fixture payment-start intent/lock and migration/tests; see [payment core](./COMMERCE_PAYMENT_CORE.md). No route or ordinary runner calls it or provisions its scope. The customer quote remains unconnected to a payable order/provider. Actual Access browser, Safari/UAT and both provider Sandbox gates stay open; no new mode, identity bypass, merchant credentials or remote resource is introduced.
+Status checked 2026-10-27: L03a1 #52 merged into main `b809f12` after head CI75/independent review; main CI76 passed. L02a isolation design does not enable HTTPS Sandbox. This L03a2a branch adds only internal durable work/claim journals; receipts do not authorize dispatch; see [payment core](./COMMERCE_PAYMENT_CORE.md). No route or ordinary runner calls it or provisions its scope. The customer quote remains unconnected to a payable order/provider. Actual Access browser, Safari/UAT and both provider Sandbox gates stay open; no new mode, identity bypass, merchant credentials or remote resource is introduced.
 
 ## Availability policy
 
