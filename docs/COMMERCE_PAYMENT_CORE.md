@@ -1,6 +1,6 @@
 # L03：持久支付核心与本地切片
 
-当前基线：main `28c06d5`（L03a3b2b #57，head `446610e` CI85及完成的独立审查无发现，main CI86通过）。当前只读排查已合并；父 `424186e`/实现 `27a788e` 已在 `2026-10-28-payment-attention/source.bundle` 完整验证归档后清理。本轮只做执行开始登记，不派发请求，不放开重新扣款或库存释放。C架构与 [隔离契约](./COMMERCE_SANDBOX_BOUNDARY.md) 不变，不授权账户、真实收款、远程资源或部署。
+当前基线：main `16b42a4`（L03a3b2c1 #58，head `7cca1b7` CI87及完成的独立审查无发现，main CI88通过）。执行开始登记已合并；源 `a57935e`（实现 `55f89bb`）已在 `2026-10-28-payment-execution-start/source.bundle` 完整验证归档后清理。本轮只做逐claim的无网络模拟执行与持久观察处理，不接顾客订单，不放开重新扣款或库存释放。C架构与 [隔离契约](./COMMERCE_SANDBOX_BOUNDARY.md) 不变，不授权账户、真实收款、远程资源或部署。
 
 ## 1. 已合并 L03a1：只记录支付开始意图
 
@@ -68,8 +68,8 @@
 | L03a3b1 已合并：规范化观察日志              | a3a                 | #55：六类状态来源、严格字段、旧claim与原ID重放；不改金融/订单/work状态                                          | 停记录，保留日志与原锁                                             |
 | L03a3b2a 已合并：原子处理与异常结果         | b1                  | #56：同事务capture条件落账/结果，保留冲突、金额异常及当时额外收款标记，不变订单/work/库存                       | 停处理，保留全部来源/事实/结果                                     |
 | L03a3b2b 已合并：实时只读排查队列           | b2a                 | 按订单聚合当前事实/未处理观察/冲突与超时待核查；分页、最小投影、环境先检，不改变历史或业务状态                  | 停调用即可，保留所有来源/事实/锁                                   |
-| L03a3b2c1 当前：执行开始登记                | b2b                 | 0014空不可变日志，scope/来源/当前claim与版本/重采样时钟/租约/CREATE条件在SQL重检；唯一登记与明确新写确认        | 停登记，保留日志/原锁；收据不能用来派发                            |
-| L03a2b 派发/核查执行器与模拟适配器          | a2a、a3持久结果、c1 | 执行前再核对时钟/当前资格，登记后崩溃仅query恢复；仅模拟无网络，不根据重放收据派发，不开放新尝试或库存释放      | 停新执行，保留登记/原键与查询待办，不因超时重新创建                |
+| L03a3b2c1 已合并：执行开始登记              | b2b                 | 0014空不可变日志，scope/来源/当前claim与版本/重采样时钟/租约/CREATE条件在SQL重检；唯一登记与明确新写确认        | 停登记，保留日志/原锁；收据不能用来派发                            |
+| L03a2b1 当前：逐claim无网络模拟执行         | a2a、a3持久结果、c1 | 本次调用自己登记/复核，持久观察→处理结果；重放只续持久处理，响应未知下次claim仅query，无扫描器或新尝试          | 停新执行，保留登记/原键与查询待办，不因超时重新创建                |
 | L03a3b2c2 后续：异常处置/活跃尝试终局裁决   | 持久事实及核验契约  | 在真实适配核验依据清楚后另设计受审计接管、终局/重试/渠道切换；保留历史，需对应迁移与竞态验收                    | 证据不足继续锁定；未通过前保留one-intent/order限制                 |
 | L03a4 验真事件持久收件箱                    | a3                  | 验真边界只接适配器可信输入；event去重与transaction去重分开；重复/乱序/崩溃可重放；provider验签在L07/L08实际实现 | 停问题处理器，保留接收/核查及未处理事件，不假装成功丢消息          |
 | L03a5 业务事件/通知outbox与可靠任务扫描基础 | a3–a4               | 业务变更与发送意图同事务；限量重试/重启/失败可见；测试环境不向真实收件人发送                                    | 暂停发送但保留任务，人工接管；不回滚已发生的支付事实               |
@@ -152,7 +152,7 @@ SQL独立校验kind对应字段/类型/范围、scope/来源绑定和时间；�
 
 本片验收重点：历史false之后新交易仍被当前队列找到、同经济交易重复不误报、未处理变处理的刷新、错金额/冲突不丢、直接API事实、两渠道、期限边界、稳定多页及同时间排序、严格scope/游标/同步快照、最小输出、读失败及只读不变量。真实身份/真机/服务商验真仍未验证；无页面变化不能算完成经营者异常操作。
 
-## 9. 当前 L03a3b2c1：执行开始登记
+## 9. 已合并 L03a3b2c1：执行开始登记
 
 `registerTestPaymentExecution(db, trusted, input, clock)` 仅供内部fixture。可信上下文仍为 `mode / instanceId / provider / accountRef / workerId`，不是认证；输入恰好 `claimId / requestId / expectedVersion`。requestId关联原开始意图，expectedVersion是**当前work版本**，等于原claim.expected_version+1，可取2至MAX_SAFE_INTEGER；不能拿领取前版本冒充。时间来自服务端函数，不能从顾客表单传入。输入在await前严格检查并拷贝，scope先于业务读取；原claim/worker/attempt/实例/渠道账户证据先于收据读取。
 
@@ -170,13 +170,29 @@ CREATE仅限原第一个create claim（expected_version=1）、pending_payment/p
 
 验收包括0013→0014保留业务历史且登记空、两渠道、同claim竞争仅一份新写确认、严格来源/版本/输入/时钟、准备期间推进时钟/租约边界、当前claim替换、登记崩溃后原键重放和新claim仅query、已有各种观察/直接capture及写前到达证据阻止create、登记后迟到事实保留、写响应/元数据/回读丢失/零写、SQL绑定/NULL/类型/期限/不可变和batch失败回滚。不把fixture测试当真实服务商或经营验收。
 
-## 10. a1验收、经营者接管与边界
+## 10. 当前 L03a2b1：逐claim无网络模拟执行
+
+内部 `executeTestPaymentWork(db, trusted, input, simulator, clock)` 只接本地fixture上下文与claim/request/current-work-version，不接受调用者提供登记收据、replayed标记、金额、币种、账户或创建键覆盖。输入与上下文在await前严格拷贝；执行器在自己调用内登记，原scope/source核验依赖第9节。普通runner与路由继续不接线、不配置scope，没有定时扫描或真实客户端。
+
+任何历史或未明确确认新写的登记都不能调用模拟器。执行器先检查稳定观察ID是否已有持久记录：仅在来源claim/worker/request/实例/渠道账户精确对应时，恢复处理已有观察；占用同ID的其他来源拒绝，不能处理别人的记录。没有观察只返回`query_required`并保留原登记，不能重建一个付款结果。观察ID复用claim UUID所在的独立业务域，不复用provider创建幂等键，也不构成授权能力。
+
+仅明确新登记且无既有观察时，最后一次异步读核对原attempt/claim/登记/current work、scope/worker/金额CAD/原创建键及当前CREATE条件；读取后再次采样合法时钟，须不早于登记/claim且严格早于lease，CREATE还要两期限仍live。随后立即调用本地模拟器，中间不新增await；状态/事实已改变则不调用并保留登记。查询仍只在当前claim/lease内执行，不因顾客报价到期就假设原付款失败。最终读至调用、暂停worker与迟到事实之间仍有竞态，不声称可撤回外部发送或实现exactly-once。
+
+`createTestPaymentSimulator`只在内存保存虚构provider状态，接收由服务器原attempt构造的原参数；无fetch/HTTP/URL、SDK、凭据或环境读取。按完整fixture scope/渠道账户/原创建键关联，同键原参数保持一致，引用均fixture-*。可脚本化六类观察及“保存capture后抛超时”等故障。模拟器的按键查询只是测试能力，**不证明Stripe/PayPal能按任意幂等键查询，也不证明真实provider持久性**；实际适配必须核对可用的对象关联/查询方法，查不清就继续unknown/接管。测试把模拟器状态与执行器调用分开保留，以验证网站执行进程中断后仍查同一份虚构服务商历史；重建空模拟器不算真实服务商恢复演练。
+
+模拟结果严格规范化/拷贝后，经原 `recordTestPaymentObservation` 持久记录，再用 `processTestPaymentObservation` 处理；调用抛错或结果形状非法时只记unknown；合法但金额或三字大写币种不符的capture照原值保留，交既有处理器标为金额异常，不丢弃或改写。三字币种只是fixture字段类型，不证明真实支持。不存自由错误、原始payload或敏感字段。claim在等待期间过期或被替换，不抛弃合法迟到观察/capture，也不覆盖新worker的work。处理/写回响应丢失时，原claim调用只恢复已有持久观察/结果，不再调用provider；观察根本没落账则保留`query_required`，后续新query claim核查原付款。不因not_found、approved、reported_failed、超时或进程重启创建第二次意图、写paid、释放/分配库存、退款或关闭异常。
+
+最小结果标记testOnly、原claim/request/reference、`observation_processed / query_required`、观察ID与重放标记；`observation_processed`只表示观察持久处理，不表示付款成功或可履约。账户、worker、原创建键/摘要/快照/原始金融载荷与顾客资料不返回。当前开发者负责fixture异常；真实经营者界面/对账、任务扫描/backoff、通知、两家实际适配与核验、顾客最终金额绑定仍单独验收。
+
+回退停止新模拟执行，保留0014登记、所有原键/观察/金融事实/结果/原锁和待核查项，不清日志复活CREATE。完成本片不代表L03a2b全部调度或L03完整支付已通过；后续a4持久收件箱、a5业务outbox/任务基础，再接实际适配/新模式及顾客闭环。验收重点是同claim并发不重复模拟创建、登记后崩溃、已提交但超时后原query查回、时钟/当前claim/期限/证据改变阻止调用、迟到旧worker结果保留、新claim不被覆盖、写/处理丢响应后只重放持久处理、scope/严格输入/关联/输出与原订单/库存不变。真实Sandbox、iPhone Safari/VoiceOver/经营者UAT及正式资源未被此片替代。
+
+## 11. a1验收、经营者接管与边界
 
 本片应在真实临时D1从0008升级，先保留既有订单/预留/审计，再验证新增空scope；每条意图核对原行、余额和命令。覆盖严格输入、scope拒绝、金额/快照/预留不一致、相同/不同请求与释放竞争、lost response/readback、两次收据查询竞态、不可改/删/替换及后续商业字段保护。内部模块不被任何运行路由导入，无网络调用；仍跑全部format/lint/typecheck/tests/生产构建/Admin资源保护。
 
 没有支付UI变化，不需要为本片新增表现截图或要求小姨开账户。真实provider Sandbox、Access浏览器、iPhone Safari/VoiceOver、经营者UAT、真实规则和正式环境仍是未通过门槛。收款/退款未明、跨渠道额外交易、库存盘亏等未来由小姨决定顾客处置，开发者负责核查和修复；当前内部fixture异常只由开发者调查，不能让小姨改SQL或强制释放。
 
-## 11. 发布与回滚
+## 12. 发布与回滚
 
 0009–0014为增量迁移；默认运行没有scope配置/入口，不开收款。它们尚未在远程运行，不能把本地迁移测试记为生产升级。确认兼容性后才能在单独授权的环境应用。
 
