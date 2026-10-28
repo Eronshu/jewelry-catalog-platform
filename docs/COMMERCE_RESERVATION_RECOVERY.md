@@ -1,6 +1,6 @@
 # C06b2b1: audited recovery of an expired unpaid test reservation
 
-Status checked 2026-10-27: the command/migration merged in #48. A separate bounded independent audit verified its two race fixes and found no blocking issue; the original outdated P2 discussion was resolved with that evidence. The GitHub bot's stalled re-review is not represented as completed. The current L01 branch adds confirmation/result UI and read-only receipt/audit projection, pending its own CI and independent review. Built from #49/main `51a890f`. No merchant credentials, real customer data, provider calls, production migration or deployment are involved.
+Status checked 2026-10-27: #48 command/migration and #50 L01 confirmation/result/read-only receipt/audit UI are merged into main `8701e52`. L01 head `30a67f2` passed CI71 and independent review with no findings; merged-main CI72 passed. A separate bounded audit resolved the original #48 race discussion, without claiming its stalled GitHub bot re-review completed. Local724 application tests/6 payment HTTP mocks and full checks passed for L01; actual Access browser/iPhone/UAT/provider acceptance remains open. The next L02a [isolation contract](./COMMERCE_SANDBOX_BOUNDARY.md) does not enable remote mode, credentials, payment or deployment.
 
 ## One deliberately narrow operation
 

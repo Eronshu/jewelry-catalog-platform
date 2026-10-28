@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-10-27: #47 review screen, #48 audited recovery command and #49 roadmap are merged; this L01 feature branch adds explicit confirmation/result UI and read-only original receipt/audit projection, pending its own CI/review. Product → cart → delivery → test quote remains transient and unconnected to payable orders/providers. Google Demo Key smoke passed; standard-key/policy/real iPhone acceptance remains open. The ordinary runner still has no approved Admin identity setup. One reviewed/merged task per branch remains required; the user now delegates merging small PRs only after current-head CI/independent review pass without unresolved findings. No deployment, billing or live payment is authorized.
+Status checked 2026-10-27: #50 merged L01 confirmation/result/receipt lookup into main `8701e52`, after CI71/independent review; merged-main CI72 passed. This L02a branch adds only isolation design and negative authorization/configuration tests: [Sandbox boundary](./COMMERCE_SANDBOX_BOUNDARY.md). No new runtime mode, identity bypass, binding, provider or deployment is enabled. Product → cart → delivery → quote remains unconnected to payable orders. Actual Access browser, real iPhone/owner UAT and provider acceptance stay open. The ordinary runner supplies no Admin identity. Follow one checked/reviewed/merged task per branch; delegated merge is not remote-resource or payment authorization.
 
 ## Availability policy
 

@@ -18,11 +18,13 @@ interface BucketBinding {
 }
 
 interface Config {
+  vars?: Record<string, unknown>;
   assets?: { run_worker_first: string[] };
   images?: { binding: string };
   d1_databases: DatabaseBinding[];
   r2_buckets?: BucketBinding[];
   previews?: {
+    vars?: Record<string, unknown>;
     images: { binding: string };
     d1_databases: DatabaseBinding[];
     r2_buckets: BucketBinding[];
@@ -44,6 +46,14 @@ function matches(pattern: string, pathname: string): boolean {
 describe("Preview configuration safety", () => {
   const worker = readConfig("wrangler.jsonc");
   const migration = readConfig("wrangler.preview-migrations.jsonc");
+
+  it("does not enable commerce or ship a local task capability in catalog deployment settings", () => {
+    for (const config of [worker, worker.previews, migration]) {
+      const vars = config?.vars ?? {};
+      expect(vars).not.toHaveProperty("COMMERCE_MODE");
+      expect(vars).not.toHaveProperty("COMMERCE_LOCAL_EXPIRY_TOKEN");
+    }
+  });
 
   it("keeps local bindings separate and Preview identifiers consistently resolved", () => {
     expect(worker.d1_databases).toHaveLength(1);
