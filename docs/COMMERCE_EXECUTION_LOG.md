@@ -206,3 +206,11 @@
 - **实际验证：**新增10项有意义的拒绝回归：游客Cookie/任务bearer/伪造身份头在规范、.data、编码/大小写Admin路径不授权；真实Worker校验另一Access AUD时在路由/存储前拒绝；有效测试JWT也不能用sandbox/commerce-sandbox/live开启旧Admin商业路由；提交的目录配置未启商城或包含本地任务能力。定向4文件126项通过；最终完整 `npm run validate` 通过60文件734项应用测试、6项付款HTTP模拟、format/lint/typecheck、生产构建/Admin资产检查。最终仅补文档证据后另做格式/链接/diff核对，不重复无变化的全套测试。
 - **证据限制：**上述是实际Worker/Router逻辑和本地D1/模拟测试，不证明边缘Access、静态分发/别名保护、真实绑定、商家Sandbox、Safari/VoiceOver或经营者UAT。官方Cloudflare环境/JWT、Stripe/PayPal回调资料本日核对并链接，不固化费用、资格或法律结论。标准runner依旧无真实Admin身份或绕过；不创建账户、资源、域名/tunnel，不传真实顾客或商家凭据。
 - **停止点与下一项：**当前小PR必须准确head CI/独立审查通过、无未处理项才按委托代合并，核对main和归档后下一分支。设计/测试可撤回，无数据/资源回滚；现有本地功能不变。下一项为L03a：持久支付尝试/交易事实/inbox/outbox/任务的模型与不变量，先做可审查小切片，不加付款按钮或真实调用。L02b/L09及#44/#37实际验收门槛继续开放。
+
+## 2026-10-27：L03a1 内部支付开始意图与原子订单锁
+
+- **现场与分工：**起始main `2022777`/远程一致且干净，#51 head CI73/独立审查、main CI74通过，历史源已归档。主分支 `codex/commerce-payment-start-intent` 负责契约、整合、最终检查；只读 `payment_attempt_contract_audit` 先核对金额/预留/重放边界，实现 `payment_start_core` 在 `/private/tmp/jewelry-payment-start-intent` 仅写0009/内部服务/测试，提交 `bc87b3f` 整合为 `f99c5e4`。独立 `payment_start_independent_review` 审查最终实现。最多两名代理并行；实际运行模型标识不可读取，不推断型号。原有未提交文件未覆盖或重做。
+- **交付边界：**0009创建空的不可变local-test scope及支付开始意图，普通runner不配置，只有临时fixture明确写入非秘密的实例/账户引用。服务无HTTP入口、网络/provider、密钥或UI；只接受旧lab的虚构零税CAD/local-test-v1快照，不是顾客交付页的最终报价。scope先于订单读取，可信owner/实例/渠道/账户与请求哈希绑定，原请求重放返回原金额/时间/版本及独立稳定创建键；不含快照、hash或账户配置。
+- **原子保护：**命令/意图/processing锁同一D1 batch；事务内重验状态/版本、报价与预留双期限、金额安全整数/总和、精确订单行及原reserve账本。snapshot读取至写入变更拒绝；意图后冻结商业身份/期限，不能复位not_started或通过旧cancel/expire/recovery释放。库存余额/账本保持不变。一个订单只许一个意图是本片保守限制，不是失败后换渠道/收款结果/退款实现。写响应丢失查持久原收据，读回也失效仅unavailable，不换键或宣称未扣款；两段receipt→order读取竞争均重查原收据。
+- **验证过程：**首轮真实D1发现综合SQL守卫超过表达式深度100，拆成三个同事务BEFORE触发器后定向47项全部通过；没有移除金额/行/预留检查。实现代理的独立tsc探针缺生成的Worker ambient类型，不视作类型检查成功。整合后完整 `npm run validate` 通过：61文件781项应用测试、6项支付HTTP模拟、format/lint/生成类型检查、生产构建/Admin资源保护。覆盖0001–0008历史订单/恢复/库存升级不变及scope空表、权限身份、两渠道/重复/并发、严格期限/非法金额/替换行、取消/到期/恢复交错、不可改删替换、事务失败回滚、写响应/读回丢失与两段确定性竞态。最后文档证据另验格式/diff，不重复未改实现的全套测试。
+- **独立审查与后续门槛：**`payment_start_independent_review` 对最终 `bc87b3f` 的服务、迁移、47用例及原模型必要上下文完成只读审查，无可操作风险；没有改文件或重复全仓测试。本片远程CI/审查以实际head为准，未通过不合并。通过后按委托核对合并树/主线CI、先归档源再清理；下一独立小PR才做持久派发/核查任务，仍无实际网络。停止新调用并保留0009、意图、订单锁和审计；不删表/改余额/复位状态。服务商Sandbox、实际Access/绑定、真机Safari/VoiceOver/UAT和真实经营规则仍未验证，无商家账户、远程资源、真实资料或部署操作。

@@ -1,8 +1,8 @@
 # 首饰商城：业务需求与待决事项
 
-**状态同步：2026-10-27 · C路线已确定；L01 #50已合入main `8701e52`，商城仍未形成营业闭环。** 已有本地选色/车/交付输入/临时报价、lab预留/取消/可选到期任务、受保护核对与受限恢复确认/原收据查询。顾客资料/金额未绑定可付款订单，Stripe/PayPal、履约退款/通知/对账/完整恢复及真实环境未验收。公开站仍是虚构作品目录。
+**状态同步：2026-10-27 · C路线已确定；L02a #51已合入main `2022777`，尚未形成营业闭环。** 已有本地选色/车/交付输入/临时报价、lab预留/取消/可选到期、Admin核对/恢复和隔离环境契约。本轮L03a1仅内部fixture支付开始意图与订单锁，不把历史零税lab快照变成顾客可付款订单；Stripe/PayPal、履约退款/通知/对账/完整恢复与真实环境仍待验收。公开站仍是虚构作品目录。
 
-下文保留业务要求、测试假设及营业门槛，不代表已实现。当前顺序见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案第4节](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务)；历史证据见 [执行记录](./COMMERCE_EXECUTION_LOG.md)。L01 #50检查/审查通过已合并，本轮L02a只交付 [隔离契约](./COMMERCE_SANDBOX_BOUNDARY.md) 与本地拒绝回归，不建立或启用HTTPS Sandbox。真实授权浏览器/经营者UAT/真机门槛保持开放；委托合并小PR不授权正式资源、计费、真实支付或经营政策。
+下文是业务要求/测试假设/营业门槛，不代表全部已实现。当前顺序见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务)，历史证据见 [执行记录](./COMMERCE_EXECUTION_LOG.md)。L02a #51已检查/审查并合并，本轮按 [支付核心契约](./COMMERCE_PAYMENT_CORE.md) 做L03a1；后续持久任务、结果事实与顾客最终金额绑定另PR。真实身份、Safari/UAT、L02b/L09门槛开放；委托合并不授权正式资源、计费、真实收付款或经营政策。
 
 本文是后续商业阶段的业务依据，不改写冻结的 [V1 规格](../PROJECT_SPEC.md)。技术模型、安全和验收见 [准备度审查](./COMMERCE_READINESS_REVIEW.md)，任务顺序见 [实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md)，选型理由和 A/B 比较见 [ADR-001](./ADR_001_COMMERCE_ROUTE_C.md)。
 
