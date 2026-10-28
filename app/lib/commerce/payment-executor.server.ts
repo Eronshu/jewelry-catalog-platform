@@ -147,6 +147,7 @@ type Gate = {
   paymentState: string;
   fulfillment: string;
   hasEvidence: number;
+  hasInboxEvidence: number;
 };
 /** No-network internal fixture executor. Registration burns a CREATE opportunity
  * even after crashes. A final read and clock check narrow the dispatch race;
@@ -293,13 +294,16 @@ export async function executeTestPaymentWork(
     }
     if (registered.replayed) return receipt("query_required", null);
     // This final read repeats mutable scope/current-claim and CREATE prerequisites.
+    // Every receipt is unresolved: fence the whole instance across providers,
+    // never trust its candidate hint to narrow admission. QUERY stays available.
     const gate = await db
       .prepare(
         `SELECT a.amount_cents AS amountCents,a.currency,a.create_operation_key AS createOperationKey,
       c.claimed_at AS claimedAt,c.lease_until AS leaseUntil,c.kind AS operation,q.expires_at AS quoteExpiresAt,
       o.reserve_until AS reserveUntil,o.state,o.payment_state AS paymentState,o.fulfillment,
       (EXISTS (SELECT 1 FROM commerce_payment_capture_facts f JOIN commerce_payment_attempts fa ON fa.command_id=f.attempt_command_id WHERE fa.order_id=a.order_id AND f.mode=a.mode AND f.instance_id=a.instance_id)
-      OR EXISTS (SELECT 1 FROM commerce_payment_observations b JOIN commerce_payment_attempts ba ON ba.command_id=b.attempt_command_id WHERE ba.order_id=a.order_id AND b.mode=a.mode AND b.instance_id=a.instance_id)) AS hasEvidence
+      OR EXISTS (SELECT 1 FROM commerce_payment_observations b JOIN commerce_payment_attempts ba ON ba.command_id=b.attempt_command_id WHERE ba.order_id=a.order_id AND b.mode=a.mode AND b.instance_id=a.instance_id)) AS hasEvidence,
+      EXISTS (SELECT 1 FROM commerce_payment_event_receipts r WHERE r.mode=a.mode AND r.instance_id=a.instance_id) AS hasInboxEvidence
       FROM commerce_payment_execution_starts e JOIN commerce_payment_work_claims c ON c.claim_id=e.claim_id
       JOIN commerce_payment_attempts a ON a.command_id=c.attempt_command_id JOIN commerce_payment_work w ON w.attempt_command_id=a.command_id
       JOIN commerce_orders o ON o.id=a.order_id JOIN commerce_quotes q ON q.id=a.quote_id JOIN commerce_payment_scope s ON s.id=1
@@ -339,7 +343,8 @@ export async function executeTestPaymentWork(
       !integer(gate.claimedAt) ||
       gate.leaseUntil !== gate.claimedAt + 30_000 ||
       gate.operation !== registered.operation ||
-      ![0, 1].includes(gate.hasEvidence)
+      ![0, 1].includes(gate.hasEvidence) ||
+      ![0, 1].includes(gate.hasInboxEvidence)
     )
       throw new PaymentExecutorError("unavailable");
     const adapterCommand: TestPaymentSimulatorCommand = Object.freeze({
@@ -366,7 +371,8 @@ export async function executeTestPaymentWork(
           !integer(gate.reserveUntil) ||
           gate.quoteExpiresAt <= dispatchAt ||
           gate.reserveUntil <= dispatchAt ||
-          gate.hasEvidence !== 0))
+          gate.hasEvidence !== 0 ||
+          gate.hasInboxEvidence !== 0))
     )
       return receipt("query_required", null);
     // No await between the fresh time check and invoking this in-memory adapter.

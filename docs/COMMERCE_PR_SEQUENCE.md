@@ -1,6 +1,6 @@
 # 商城既有成果的 PR 顺序
 
-更新：2026-10-28。#58已合并main `16b42a4`：head `7cca1b7` CI87/完成的独立审查无发现，main CI88通过，源 `a57935e`/实现 `55f89bb` 已在 `2026-10-28-payment-execution-start/source.bundle` 验证归档清理。本轮分支 `codex/commerce-payment-simulated-executor`，隔离实现代理仅拥有模拟器/逐claim执行器及测试；父负责契约、整合和最终检查，完成后独立审查。远程旧分支仍保留，删除通道未恢复；没有重复生成或生产操作。
+更新：2026-10-28。当前基线main `0686817`（本地事件变体收件箱 #60，准确head `0b1a73e` CI92及完成的独立审查通过，main CI93通过）；源 `093fbc6`/实现 `20a8800`/代理 `d280a6a` 已在 `2026-10-28-payment-event-inbox/source.bundle` 验证归档清理。本轮分支 `codex/commerce-event-create-fence`，实现仅0016/执行器最终读/定向测试；父负责契约、整合、文档及检查，另做独立审查。远程旧分支删除通道未恢复，仍保留。无重复生成或生产操作。
 
 按最新 [AGENTS](../AGENTS.md)，**每完成一项可审查任务就提交、开 PR，等待当前head CI、独立审查和合并；之后从更新后的 main 开下一分支。** 用户2026-10-27明确授权代合并符合这些门槛、无未解决发现的小型本地开发/文档PR，并归档后清理。它不允许堆叠下一功能，也不授权部署、计费、真实支付或生产数据。下文保留历史提交/恢复证据，不扩大这次委托范围。
 
@@ -66,4 +66,4 @@
 
 #47已合并并归档。#48由用户合并至main `757ce77`；修复head `e24c1bc` 的CI67成功，本地658项应用测试/6项支付模拟及完整检查通过。原P2两个竞态修复经单独只读审查，无阻塞发现，旧讨论已附证据resolved；GitHub bot仍running不能写成完成。源 `91c4613` 已归档验证至 `.git/commerce-archive/2026-10-27-recovery-command/source.bundle`。
 
-L03a1至逐claim模拟 #52–#59均已按准确head CI/完成的独立审查合并，历史源先归档；#59 main `5988847` 的CI91通过，head `445dd03` CI90通过，CI89超时修复及delta审查见执行记录。当前 [L03a4a事件变体收件箱](./COMMERCE_PAYMENT_CORE.md) 仅保存本地fixture规范化事件，不接真实provider/顾客订单或任务扫描，不改金融事实/paid/work/库存；现有CREATE准入不读新收据。后续a4b先解决验真来源/关联/所有变体冲突与待处理事件准入，再接处理；a5事件/任务基础、顾客金额订单闭环与实际适配继续分PR。完整终局/重试另做，保留one-intent/order，不删日志复活CREATE。L02b、L09及#44/#37身份、真机、政策/经营门槛仍开放。
+L03a1至事件收件箱 #52–#60已按准确head CI/完成独立审查合并，源先归档。当前 [L03a4b1保守CREATE闸门](./COMMERCE_PAYMENT_CORE.md) 按同实例任意receipt停止两渠道CREATE，QUERY/原持久恢复仍可用，不建立事件关联/验真/金融处理，不改订单/work/库存。a4b2须补来源/关联/全部变体冲突及有证据的准入收窄，再接金融处理；a5任务基础、顾客金额订单闭环与实际适配仍后续。one-intent/order不放宽，不删receipt或guard恢复CREATE。L02b/L09和#44/#37身份/真机/经营门槛仍开放。
