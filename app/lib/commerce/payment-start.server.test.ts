@@ -742,7 +742,19 @@ describe("internal fictional payment-start intent on real temporary D1", () => {
       await expect(
         beginTestPaymentAttempt(db, trusted, command, now + 1),
       ).rejects.toMatchObject({
-        code: _label === "line identity mismatch" ? "unavailable" : "conflict",
+        // The typed legacy read boundary excludes these historical malformed
+        // sources before payment validation; raw SQL must still reject them.
+        code: [
+          "null root",
+          "wrong test marker",
+          "wrong currency",
+          "wrong rules",
+          "fictional tax changed",
+        ].includes(_label as string)
+          ? "not_found"
+          : _label === "line identity mismatch"
+            ? "unavailable"
+            : "conflict",
       });
       await expect(rawStart(item, command)).rejects.toThrow();
       expect(await snapshot(item)).toEqual(before);

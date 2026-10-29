@@ -1,3 +1,4 @@
+import { legacyLabSource } from "./legacy-lab-source.server";
 import type { AdminPrincipal } from "../auth/admin-access.server";
 import { commandHash } from "./inventory.server";
 
@@ -210,7 +211,7 @@ export async function recoverExpiredReservation(
     db
       .prepare(
         `SELECT state, payment_state AS paymentState, fulfillment,
-    reserve_until AS reserveUntil, version FROM commerce_orders WHERE id = ?`,
+    reserve_until AS reserveUntil, version FROM commerce_orders WHERE ${legacyLabSource()} AND id = ?`,
       )
       .bind(input.reference)
       .first<Current>();

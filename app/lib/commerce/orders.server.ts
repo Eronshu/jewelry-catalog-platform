@@ -1,3 +1,4 @@
+import { legacyLabSource } from "./legacy-lab-source.server";
 import { commandHash, getCommerceVariantsByIds } from "./inventory.server";
 import {
   buildTestQuote,
@@ -85,7 +86,7 @@ export async function getTestOrder(
   const order = await db
     .prepare(
       `SELECT id, state, fulfillment, payment_state AS paymentState,
-    reserve_until AS reserveUntil, version, snapshot FROM commerce_orders WHERE id = ? AND owner_hash = ?`,
+    reserve_until AS reserveUntil, version, snapshot FROM commerce_orders WHERE ${legacyLabSource()} AND id = ? AND owner_hash = ?`,
     )
     .bind(orderId, owner)
     .first<Omit<TestOrder, "quote"> & { snapshot: string }>();
@@ -101,7 +102,7 @@ export async function listTestOrders(
   validateOwner(owner, Date.now());
   const rows = await db
     .prepare(
-      `SELECT id FROM commerce_orders WHERE owner_hash = ? ORDER BY created_at DESC, id DESC LIMIT 20`,
+      `SELECT id FROM commerce_orders WHERE ${legacyLabSource()} AND owner_hash = ? ORDER BY created_at DESC, id DESC LIMIT 20`,
     )
     .bind(owner)
     .all<{ id: string }>();
@@ -125,7 +126,7 @@ export async function reserveTestOrder(
   if (previous) return previous;
   const record = await db
     .prepare(
-      "SELECT snapshot, expires_at FROM commerce_quotes WHERE id = ? AND owner_hash = ?",
+      `SELECT snapshot, expires_at FROM commerce_quotes WHERE ${legacyLabSource()} AND id = ? AND owner_hash = ?`,
     )
     .bind(quoteId, owner)
     .first<{ snapshot: string; expires_at: number }>();

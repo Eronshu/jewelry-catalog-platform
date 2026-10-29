@@ -1,3 +1,4 @@
+import { legacyLabSource } from "./legacy-lab-source.server";
 // Internal read model: callers must establish trusted Admin + isolated local DB.
 // Never select owner_hash, snapshot, customer fields or provider credentials.
 export type ReviewCursor = { reserveUntil: number; orderId: string };
@@ -67,7 +68,7 @@ export async function listReservationReview(
     const rows = await db
       .prepare(
         `SELECT ${columns} FROM commerce_orders
-       WHERE (state = 'pending_payment' OR fulfillment = 'held')
+       WHERE ${legacyLabSource()} AND (state = 'pending_payment' OR fulfillment = 'held')
        AND (fulfillment = 'held' OR payment_state != 'not_started' OR reserve_until <= ?)
        AND (reserve_until, id) > (?, ?)
        ORDER BY reserve_until, id LIMIT 26`,
@@ -103,7 +104,9 @@ export async function inspectReservation(
     // Bound related reads in one batch; do not fetch the quote snapshot.
     const [orders, lines, history] = await db.batch([
       db
-        .prepare(`SELECT ${columns} FROM commerce_orders WHERE id = ?`)
+        .prepare(
+          `SELECT ${columns} FROM commerce_orders WHERE ${legacyLabSource()} AND id = ?`,
+        )
         .bind(orderId),
       db
         .prepare(
