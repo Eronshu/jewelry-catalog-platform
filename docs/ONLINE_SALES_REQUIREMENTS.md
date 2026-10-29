@@ -1,8 +1,8 @@
 # 首饰商城：业务需求与待决事项
 
-**状态同步：2026-10-28 · C路线已确定；main `0686817`（本地事件变体收件箱 #60，准确head `0b1a73e` CI92及完成的独立审查通过，main CI93通过），尚未形成营业闭环。** 已有本地选色/车/交付输入/临时报价、lab预留/取消/到期、Admin核对/恢复及内部fixture支付日志/模拟执行/事件收件箱。本轮仅增加收到未核查事件后停止新CREATE的本地安全闸门；不建立事件归属、真实验真或顾客可付款订单。Stripe/PayPal、履约退款/通知/对账/完整恢复与真实环境仍待验收。公开站仍是虚构作品目录。
+**状态同步：2026-10-28 · C路线已确定；main `9f55625`（保守CREATE闸门 #61，准确head `4f96dfc` CI94及完成的独立审查通过，main CI95通过），完整营业闭环未形成。** 已有本地购物/交付临时报价、lab预留/到期、Admin核对/恢复及内部fixture支付日志/模拟执行/事件收件和保守闸门。本轮仅固定服务商关联与恢复的设计契约，没有关联/验真代码或顾客可付款订单。真实支付、履约退款、通知/对账/恢复及真实环境仍未验收，公开站仍是虚构作品目录。
 
-下文是业务要求/测试假设/营业门槛，不代表全部已实现。当前顺序见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务)，历史证据见 [执行记录](./COMMERCE_EXECUTION_LOG.md)。本轮 [支付核心契约第12节](./COMMERCE_PAYMENT_CORE.md) 以同实例任意收件阻止两渠道CREATE，仅允许继续原QUERY/持久恢复；不根据未信hint作业务关联。这会停止整个fixture实例的新CREATE，不是正式营业规则。来源/关联/冲突及有证据的准入收窄另PR，不发真实请求、不开放重扣/库存释放；顾客最终金额绑定仍待实现。身份、Safari/UAT、L02b/L09和经营门槛开放；委托合并不授权正式资源、计费、真实收付款或经营政策。
+下文是业务要求/测试假设/营业门槛，不代表全部已实现。入口见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务) 与 [执行记录](./COMMERCE_EXECUTION_LOG.md)。当前 [关联/恢复契约](./COMMERCE_PROVIDER_EVENT_CONTRACT.md) 分清事件验真、对象归属、只读查询与收款；PayPal批准不等于capture，QUERY不能做写操作。0016仍按同实例任意收件阻止两渠道CREATE，未收窄。下一项可用虚构资料推进L04本地最终金额/交付快照接受模型，不等商家账户或额外诊断表；支付和真实资料门槛照旧，不把假设变成顾客承诺。
 
 本文是后续商业阶段的业务依据，不改写冻结的 [V1 规格](../PROJECT_SPEC.md)。技术模型、安全和验收见 [准备度审查](./COMMERCE_READINESS_REVIEW.md)，任务顺序见 [实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md)，选型理由和 A/B 比较见 [ADR-001](./ADR_001_COMMERCE_ROUTE_C.md)。
 

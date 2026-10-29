@@ -305,3 +305,15 @@
 - **独立代码审查：**`payment_observations_independent_review` 在恢复时间后接受一次准确实现 `69b88807d245b1b67ec1d701e69dd2461b595662` 的限定只读审查，覆盖三文件、相关0014/15和当前支付核心第12节，无可操作发现。确认SQL/最终读相同实例级谓词、0/1形状拒绝、CREATE-only且QUERY/历史恢复保留、14个独立跨渠道kind案例及升级/到达竞态/直接SQL绕过测试；未改文件/未重跑测试。可用性代价和读后竞态已披露，结论不证明真实provider验真或支付安全，未冒称GitHub机器人回执。
 
 - **最终本地验收：**完整format/lint/生成项目typecheck通过；全部应用测试以命令行 `--maxWorkers=2` 避免上一片已确认的本机端口耗尽，70文件1292项全部通过（75.28秒），6项独立付款HTTP模拟和生产构建/Admin资产保护通过。没有改全局CI、测试超时/断言、skip或重试。最后仅文档补证据，另复查格式/本地链接/diff，不重复无改动全套测试。当前小PR须准确head CI、完成的独立审查及所有已返回发现处置后才代合并；验证合并树、归档清理和main CI后才进入下一分支。
+
+## 2026-10-28：L03a4b2-D 服务商事件关联与恢复设计
+
+- **前置与现场：**#61准确head `4f96dfc` CI94（40790383999）及完成的独立审查通过，合并main `9f55625`，main CI95（40790979292）成功。合并树 `6e36b7b` 已核对；源 `d985fbd`/实现 `69b8880` 在 `.git/commerce-archive/2026-10-28-event-create-fence/source.bundle` 完整验证归档后清理本地分支/空工作树，远程分支删除通道未恢复。当前从干净更新main建立 `codex/commerce-provider-event-contract`，没有重做代码或模型。
+- **调查与取舍：**父核对官方Stripe Session/PaymentIntent/Charge/Webhooks/幂等、PayPal Orders/Payments/REST Webhooks/幂等文档，链接和核对范围列在新契约。部分富文档/Markdown变体无法由浏览工具读取，未声称已核对其完整字段；采用可访问的官方对象文档/API概要和REST指南，不拿示例当商家实测。`execution_gate_contract_audit` 独立只读建议先做文档契约：现有未分类fixture引用和claim来源没有唯一对象归属，新增只读字符串匹配不能解决验真/唤醒，暂不造无消费者的诊断表。
+- **交付与边界：**新增 `COMMERCE_PROVIDER_EVENT_CONTRACT.md`，同步状态入口。建议有类型/完整scope/唯一来源对象绑定后，验真事件仅建议真实只读QUERY，仍用真实claim观察/事实路径，不捏造claim或由event直写paid。无绑定的CREATE丢响应继续orphan/unknown；不从metadata/UUID或模拟按键查询推出可查归属。PayPal批准后capture是独立外部写操作，须自己的键/原参数/资格，不藏入QUERY。原0016保守全实例CREATE闸门完全不变，查询成功/关联/验签不自动清除，准入收窄和全部变体冲突另审查。
+- **后续依赖细化：**下一项L04a本地顾客最终报价/交付快照接受模型可用虚构资料和版本化测试规则先行，再拆订单原子预留/游客凭据/页面；类型绑定/实际QUERY/验真唤醒在L07–L09顺序整合，支付激活前补齐。不让另一个诊断表或账户申请阻塞可逆本地工作，不把lab零税规则或Google未核对来源的地址当真实资料保存。C架构和冻结V1不变，不声称L03/C08整体完成。
+- **分工/回退：**根代理负责资料、契约、状态同步和最终检查；另一代理做限定文档技术审查，无并行写代理/工作树，实际模型设置不可读取、不推断。仅文档变更，无代码/迁移/模型/账户/凭据/服务商业务请求/远程资源/计费/部署；回退只改文档，0016及全部历史/锁保留。检查和审查结果在实际完成后补记，不添加复述文档的测试。
+
+- **独立技术审查：**`payment_observations_independent_review` 对准确提交 `6ac21ff6182e6cfa1374c8f2fc2749498e8d83b6` 的八文档完成限定只读审查，无可操作发现。独立抽核官方Session/PaymentIntent/Charge和PayPal REST验真/mock边界，确认hint不授予归属、QUERY不capture、无绑定丢响应保持unknown及0016未清除；L04先行与支付激活门槛分离。未修改文件或重跑测试，未验证真实账户/API版本/Sandbox，实际模型不可读取。
+
+- **实际检查：**完整format/lint/生成项目typecheck通过，全部应用测试以 `--maxWorkers=2` 运行70文件1292项通过（74.60秒），随后6项独立支付HTTP模拟和生产构建/Admin资产保护通过；无新业务代码/用例，不把测试数当新支付验收。最终仅补本条证据，另做八文档格式/链接/diff核对。准确head CI及已完成独立审查无未解决项后才代合并；之后核对合并树、归档清理及main CI。本轮不替代真实API/商家/Sandbox/设备/UAT门槛。
