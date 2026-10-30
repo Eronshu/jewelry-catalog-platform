@@ -410,3 +410,20 @@ export function revokeTestCheckoutSession(
     }
   });
 }
+
+/** Private status GET must never bootstrap a new identity when its cookie is lost. */
+export function resolveTestCheckoutSession(
+  db: D1Database,
+  raw: TestCheckoutSessionConfig,
+  request: Request,
+  clock: () => number = Date.now,
+): Promise<TestCheckoutSession> {
+  return boundary(async () => {
+    const { config, token } = requestData(raw, request, "GET");
+    if (token === null) fail("unauthorized");
+    const [tokenHash, csrfToken] = await hashes(config, token);
+    const row = await read(db, config, tokenHash);
+    active(row, sample(clock));
+    return result(row, csrfToken);
+  });
+}

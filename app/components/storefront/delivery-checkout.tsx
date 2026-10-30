@@ -109,8 +109,10 @@ const initialDetails: Details = {
 // updates these same editable address fields and invalidates the quote.
 export function DeliveryCheckout({
   placesKey = null,
+  orderFlowAvailable = false,
 }: {
   placesKey?: string | null;
+  orderFlowAvailable?: boolean;
 }) {
   const cart = useShoppingCart();
   const cartKey = JSON.stringify(cart.lines);
@@ -528,6 +530,18 @@ export function DeliveryCheckout({
           </>
         )}
         <p>No payment is available in this local preview.</p>
+        {orderFlowAvailable && (
+          <section>
+            <p>
+              Continue using a fixed fictional Ontario or British Columbia
+              profile. Your entered name/address is not carried forward or
+              saved; you must review a new final amount.
+            </p>
+            <Link to="/checkout/confirm">
+              Continue to fictional order confirmation
+            </Link>
+          </section>
+        )}
       </aside>
     </div>
   );

@@ -52,6 +52,47 @@ describe("Preview configuration safety", () => {
       const vars = config?.vars ?? {};
       expect(vars).not.toHaveProperty("COMMERCE_MODE");
       expect(vars).not.toHaveProperty("COMMERCE_LOCAL_EXPIRY_TOKEN");
+      expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_INSTANCE_ID");
+      expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_ORIGIN");
+      expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_EXPIRY");
+      expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_NEW_ORDERS");
+    }
+  });
+
+  it("keeps checkout paths Worker-first without overlapping rules in deployment or local runner", () => {
+    const runnerSource = readFileSync(
+      resolve("scripts/commerce-local.mjs"),
+      "utf8",
+    );
+    const runnerLiteral = runnerSource.match(
+      /run_worker_first:\s*(\[[^\]]+\])/,
+    );
+    expect(runnerLiteral).not.toBeNull();
+    const runnerPatterns = JSON.parse(
+      runnerLiteral![1].replace(/,(\s*\])/g, "$1"),
+    ) as string[];
+    for (const patterns of [worker.assets!.run_worker_first, runnerPatterns]) {
+      for (const pattern of patterns)
+        expect(
+          patterns.filter((candidate) => matches(candidate, pattern)),
+        ).toHaveLength(1);
+      for (const path of [
+        "/checkout",
+        "/checkout.data",
+        "/checkout/quote",
+        "/checkout/quote.data",
+        "/checkout/confirm",
+        "/checkout/confirm.data",
+        "/checkout/commands",
+        "/checkout/commands.data",
+        "/checkout/orders/order-fictional",
+        "/checkout/orders/order-fictional.data",
+        "/checkout/orders/order-fictional/cancel",
+        "/checkout/orders/order-fictional/cancel.data",
+      ])
+        expect(
+          patterns.filter((pattern) => matches(pattern, path)),
+        ).toHaveLength(1);
     }
   });
 
@@ -101,7 +142,14 @@ describe("Preview configuration safety", () => {
 
   it("routes canonical Admin documents, data, actions, uploads and previews through the Worker", () => {
     const patterns = worker.assets!.run_worker_first;
-    expect(patterns).toEqual(["/admin", "/admin.data", "/admin/*"]);
+    expect(patterns).toEqual([
+      "/admin",
+      "/admin.data",
+      "/admin/*",
+      "/checkout",
+      "/checkout.data",
+      "/checkout/*",
+    ]);
 
     for (const path of [
       "/admin",

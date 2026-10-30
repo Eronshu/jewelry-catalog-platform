@@ -33,7 +33,8 @@ function readResult(value) {
 }
 
 /**
- * One awaited batch per tick. 503 means scan failed before item processing;
+ * One awaited legacy/owned batch pair per tick. A 503 may follow a committed
+ * first scan; each order release remains idempotent on the retry;
  * retry with bounded backoff. Ambiguous transport/timeout/bad replies stop the
  * driver: never assume an aborted HTTP request rolled back a D1 transaction.
  * @param {{origin: string, token: string, fetcher?: typeof fetch, report?: (message: string) => void}} options
@@ -59,6 +60,8 @@ export function createLocalExpiryDriver({
   };
   /** @type {Cursor | undefined} */
   let cursor;
+  /** @type {Cursor | undefined} */
+  let ownedCursor;
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let timer;
   /** @type {AbortController | undefined} */
@@ -88,7 +91,12 @@ export function createLocalExpiryDriver({
         method: ready ? "POST" : "GET",
         headers,
         ...(ready
-          ? { body: JSON.stringify(cursor ? { after: cursor } : {}) }
+          ? {
+              body: JSON.stringify({
+                ...(cursor ? { after: cursor } : {}),
+                ...(ownedCursor ? { ownedAfter: ownedCursor } : {}),
+              }),
+            }
           : {}),
         signal: active.signal,
         redirect: "error",
@@ -111,15 +119,20 @@ export function createLocalExpiryDriver({
         );
       } else {
         if (!response.ok) throw new Error();
-        const result = readResult(await response.json());
+        const payload = await response.json();
+        const result = readResult(payload);
+        const owned =
+          payload.owned === undefined ? null : readResult(payload.owned);
         if (stopped) return;
-        if (result.stopped) throw new Error();
+        if (result.stopped || owned?.stopped) throw new Error();
+        ownedCursor = owned?.nextCursor ?? undefined;
         cursor = result.nextCursor ?? undefined;
         failures = 0;
         const counts = { cancelled: 0, skipped: 0, failed: 0 };
-        for (const item of result.outcomes) counts[item.outcome]++;
+        for (const item of [...result.outcomes, ...(owned?.outcomes ?? [])])
+          counts[item.outcome]++;
         report(
-          `Local expiry observed: cancelled=${counts.cancelled}, skipped=${counts.skipped}, failed=${counts.failed}; ${cursor ? "continue page" : "fresh sweep next tick"}.`,
+          `Local expiry observed: cancelled=${counts.cancelled}, skipped=${counts.skipped}, failed=${counts.failed}; ${cursor || ownedCursor ? "continue page" : "fresh sweep next tick"}.`,
         );
         if (counts.failed)
           report(

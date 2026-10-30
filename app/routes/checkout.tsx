@@ -1,3 +1,4 @@
+import { checkoutAvailable } from "../lib/commerce/checkout-config.server";
 import {
   data,
   isRouteErrorResponse,
@@ -28,6 +29,10 @@ export function loader({ request, context }: Route.LoaderArgs) {
   return data(
     {
       localPreview: true,
+      orderFlowAvailable: checkoutAvailable(
+        request,
+        context.get(cloudflareContext).env,
+      ),
       placesKey: readLocalPlacesKey(
         request,
         context.get(cloudflareContext).env,
@@ -48,7 +53,10 @@ export default function Checkout() {
           reservation or payment can be placed here.
         </p>
       </header>
-      <DeliveryCheckout placesKey={loaderData?.placesKey ?? null} />
+      <DeliveryCheckout
+        placesKey={loaderData?.placesKey ?? null}
+        orderFlowAvailable={loaderData?.orderFlowAvailable ?? false}
+      />
       <p>
         <Link to="/cart">Back to your cart</Link>
       </p>

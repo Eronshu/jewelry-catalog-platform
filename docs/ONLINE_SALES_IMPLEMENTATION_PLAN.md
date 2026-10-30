@@ -1,6 +1,6 @@
 # C 路线：商城实施顺序与交付门槛
 
-**更新：2026-10-29 · C路线已确定；main `62d8aa3`（#68准确head CI103、独立审查和main CI104通过）。来源桥接/原子预留及未付款释放已合并；本片Issue #69 / L04d只做本机专用游客凭据与同源请求保护，不接HTTP、runner、页面、自动调度或付款，完整营业闭环未完成。**
+**更新：2026-10-30 · C路线已确定；main `bbff613`（#70准确head CI105、独立审查和main CI106通过）。报价/预留/释放及专用本机会话已合并；当前Issue #71交付本地可见的最终确认→自己的待付款订单/私有状态/取消及有界到期调用。无provider派发、真实PII或营业/部署授权；随后直接进入Stripe托管付款衔接。**
 
 商品详情 → 购物车 → 联系/交付资料 → 服务端测试报价、本地lab预留/取消/可选到期任务、受保护经营者核对与受限恢复确认/原收据查询均已有本地实现。顾客报价尚未绑定可付款订单，Stripe/PayPal未接入；真实授权浏览器、真机/UAT、完整安全恢复未验收。历史证据见 [执行记录](./COMMERCE_EXECUTION_LOG.md)，以下任务表不表示C03–C09全体验收通过。
 
@@ -67,12 +67,12 @@
 
 2026-10-30按用户反馈调整执行粒度：L04d收口后优先可演示的本地下单纵向链路，随后Stripe托管付款/订单衔接，再PayPal；必要胶水与规则兼容随功能整合，不继续扩展无消费者的外围模型。具体验收与真实Sandbox门槛见[当前顺序](./COMMERCE_LAUNCH_ROADMAP.md#12-紧接着该做什么)。关键金额/库存/权限/重复扣款测试保留，避免重复全仓审查。
 
-2026-10-29当前基线main `62d8aa3`，#68准确head `017f6b4` CI103与独立审查通过，main CI104成功；CI全部73文件1376项应用测试、6项HTTP模拟和生产构建通过。源 `7c59c2d` / 核心 `8c510a3` 在 `2026-10-29-checkout-owned-release/source.bundle` 验证归档后清理本地分支/工作树；远程旧分支仍无删除通道。本片实际检查另记日志。
+2026-10-30当前基线main `bbff613`，#70准确head `f946141` CI105与独立审查通过，main CI106成功；全部74文件1401项应用测试、6项HTTP模拟和构建通过。源 `49979d9` / 核心 `f1e808b` 已在 `2026-10-30-checkout-guest-capability/source.bundle` 全历史归档验证后清理本地分支/工作树；远程旧分支仍无删除通道。本片实际检查另记日志。
 
 0017最终报价接受和0018[明确来源桥接/全车原子预留](./COMMERCE_CHECKOUT_ORDER_RESERVATION.md)已存在，沿用共享订单/库存权威；顾客页面仍只临时报价，未接自己的持久订单/付款。已合并的#68 / L04c实现[自有未付款取消/到期释放](./COMMERCE_CHECKOUT_OWNED_RELEASE.md)：来源分区/版本/原键、完整release流水和状态/审计同事务；只允许pending/not_started/none且该order无任何payment attempt，不以owner或单provider过滤推断未收款。
 
 INSERT/UPDATE两种占用下限只在同事务持久释放证据下减少，其他映射订单/FB/实物/分配不受影响。目录改价、改名或下架不阻止按原数量解除未付款占用；未知/processing/held/confirmed或已有意图仍走后续对账，不自动释放。旧lab查询/变更继续隔离来源，0009表级规则CHECK、JS/零税SQL和0016不放宽。
 
-当前Issue #69 / L04d实现[专用游客凭据](./COMMERCE_CHECKOUT_GUEST_CAPABILITY.md)：服务端hash-only session与随机owner、完整scope、绝对到期/单向撤销、同源POST/CSRF，不自动替换坏身份；限受信本机合成fixture，Cookie不按端口隔离。仍无HTTP/runner/自动任务或付款。随后按 [路线图](./COMMERCE_LAUNCH_ROADMAP.md) 单独补消费者的初始化/限流/授权时点和私有查询恢复、有归属的到期扫描/重启，再实现最终确认/状态页面和L05金融裁决；规则泛化和真实绑定/QUERY/验真/capture在相应支付PR实施。实际Google/PII生命周期、经营政策/商家账户及真实环境门槛保留。
+当前Issue #71复用[专用游客凭据](./COMMERCE_CHECKOUT_GUEST_CAPABILITY.md)接入 `/checkout/confirm` 和 `/checkout/orders/:orderId`：只有确认页可bootstrap，状态/恢复要求现有会话；按完整scope查询最少字段，变更同源POST/CSRF/限长表单。固定fixture资料明确重新确认，不保存任意输入或Google地址。报价/接受/建单及取消沿用原请求键，配置本机有界owned到期调用后才允许创建预留；旧lab和付款锁保护不变。真实HTTP/Safari/UAT仍按实际证据标记。随后优先Stripe托管付款/新来源规则兼容、必要L05金融库存裁决及真实Sandbox，再PayPal；不等全部经营工具先完成。实际Google/PII生命周期、经营/账户与正式授权门槛保留。
 
 每项准确head CI/完成的独立审查无未解决项后代合并，验证合并树、先归档后清理及main CI后下一片。缺真实资料时只做明确虚构fixture；账户、资源、计费、正式收款和部署仍需对应授权。

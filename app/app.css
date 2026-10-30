@@ -2511,6 +2511,43 @@ a {
   gap: 2rem;
   align-items: start;
 }
+.checkout-page > h1,
+.checkout-order h1 {
+  margin: 0 0 1.25rem;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.15;
+  letter-spacing: var(--tracking-heading);
+}
+.checkout-pending-orders {
+  margin-block: 1.5rem 2rem;
+  padding: 1rem;
+  border: 1px solid var(--color-line);
+}
+.checkout-pending-orders h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.35rem;
+}
+.checkout-pending-orders p,
+.checkout-order > p {
+  margin-block: 0.75rem;
+  line-height: 1.5;
+}
+.checkout-order {
+  max-width: 44rem;
+}
+.checkout-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block: 1.25rem;
+}
+.checkout-order-actions button {
+  flex: 1 1 13rem;
+}
+.checkout-page :is(button, a, select, input):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
 .checkout-form {
   display: grid;
   gap: 1rem;

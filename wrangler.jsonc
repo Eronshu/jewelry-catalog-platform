@@ -3,7 +3,16 @@
   "name": "jewelry-catalog-platform",
   "compatibility_date": "2026-09-29",
   "main": "./workers/app.ts",
-  "assets": { "run_worker_first": ["/admin", "/admin.data", "/admin/*"] },
+  "assets": {
+    "run_worker_first": [
+      "/admin",
+      "/admin.data",
+      "/admin/*",
+      "/checkout",
+      "/checkout.data",
+      "/checkout/*",
+    ],
+  },
   "cache": { "enabled": true },
   "images": { "binding": "IMAGES" },
   "r2_buckets": [
