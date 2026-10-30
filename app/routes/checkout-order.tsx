@@ -24,60 +24,81 @@ export function OwnedOrderView({
   order: initial,
   csrfToken,
   refresh,
+  canPreparePayment = false,
 }: {
   order: OwnedCheckoutOrder;
   csrfToken: string;
   refresh: () => void;
+  canPreparePayment?: boolean;
 }) {
   const [order, setOrder] = useState(initial);
-  const [busy, setBusy] = useState(false);
+  const [operationInFlight, setOperationInFlight] = useState<
+    "cancel" | "prepare" | null
+  >(null);
+  const busy = operationInFlight !== null;
   const [error, setError] = useState("");
+  const [uncertain, setUncertain] = useState<"cancel" | "prepare" | null>(null);
   const release = useRef<string | null>(null);
+  const preparation = useRef<string | null>(null);
   const active = useRef(false);
   const alert = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (error) alert.current?.focus();
   }, [error]);
-  async function cancel() {
+  async function submit(operation: "cancel" | "prepare") {
     if (active.current) return;
     active.current = true;
-    setBusy(true);
+    setOperationInFlight(operation);
     setError("");
-    release.current ??= crypto.randomUUID();
+    const requestKey = operation === "cancel" ? release : preparation;
+    requestKey.current ??= crypto.randomUUID();
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(`/checkout/orders/${order.id}/cancel`, {
-        method: "POST",
-        body: new URLSearchParams({
-          csrf: csrfToken,
-          releaseKey: release.current,
-          expectedVersion: String(initial.version),
-        }),
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        signal: controller.signal,
-        redirect: "error",
-      });
+      const response = await fetch(
+        `/checkout/orders/${order.id}/${operation === "cancel" ? "cancel" : "prepare-payment"}`,
+        {
+          method: "POST",
+          body: new URLSearchParams({
+            csrf: csrfToken,
+            ...(operation === "cancel"
+              ? { releaseKey: requestKey.current }
+              : { requestId: requestKey.current }),
+            expectedVersion: String(initial.version),
+          }),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          signal: controller.signal,
+          redirect: "error",
+        },
+      );
       const body = (await response.json()) as {
         order?: OwnedCheckoutOrder;
         error?: string;
+        retrySame?: boolean;
       };
-      if (!response.ok || !body.order) {
+      if (!response.ok || !body.order || body.order.id !== order.id) {
+        setUncertain(
+          response.status >= 500 || body.retrySame ? operation : null,
+        );
         setError(
           body.error ??
-            "Cancellation could not be checked. Retry this same request or refresh status.",
+            "The result could not be checked. Retry this same request or refresh status.",
         );
         return;
       }
       setOrder(body.order);
+      setUncertain(null);
     } catch {
+      setUncertain(operation);
       setError(
-        "Cancellation response was lost. Retry the same cancellation or refresh status; do not assume stock was released.",
+        operation === "cancel"
+          ? "Cancellation response was lost. Retry the same cancellation or refresh status; do not assume stock was released."
+          : "Preparation response was lost. Retry the same preparation or refresh status. Do not start another payment attempt; no provider payment request is sent by this feature.",
       );
     } finally {
       window.clearTimeout(timer);
       active.current = false;
-      setBusy(false);
+      setOperationInFlight(null);
     }
   }
   return (
@@ -88,7 +109,9 @@ export function OwnedOrderView({
       <h1>
         {order.state === "cancelled"
           ? "Test order cancelled"
-          : "Unpaid test order"}
+          : order.paymentState === "processing"
+            ? "Test payment preparation recorded"
+            : "Unpaid test order"}
       </h1>
       <p style={{ overflowWrap: "anywhere" }}>Reference: {order.id}</p>
       <p>
@@ -119,10 +142,29 @@ export function OwnedOrderView({
         )[order.delivery] ?? "Test delivery"}
       </p>
       <CheckoutAmounts quote={order} />
+      {order.paymentState === "processing" && (
+        <p role="status">
+          <strong>No provider payment request has been sent.</strong> This
+          records only a local test intent, not a Stripe Session or a paid
+          order. Stock stays protected pending payment review; unpaid
+          cancellation and expiry cannot release it.
+        </p>
+      )}
+      {canPreparePayment &&
+        order.state === "pending_payment" &&
+        order.paymentState === "not_started" && (
+          <p>
+            Optional Stripe test preparation records an intent and protects
+            these fictional items. It sends no provider request and takes no
+            payment.
+          </p>
+        )}
       <p>
         {order.state === "cancelled"
           ? "The unpaid reservation has been released."
-          : `Test reservation deadline: ${new Date(order.reserveUntil).toLocaleString()}. The local expiry driver releases eligible unpaid items. Refresh to check its result.`}
+          : order.paymentState === "processing"
+            ? "Refresh to check the current test preparation. The local unpaid expiry driver does not release attempted orders."
+            : `Test reservation deadline: ${new Date(order.reserveUntil).toLocaleString()}. The local expiry driver releases eligible unpaid items. Refresh to check its result.`}
       </p>
       <div className="checkout-order-actions">
         <button
@@ -138,10 +180,28 @@ export function OwnedOrderView({
             <button
               className="commerce-secondary-button"
               type="button"
-              disabled={busy}
-              onClick={() => void cancel()}
+              disabled={busy || uncertain === "prepare"}
+              onClick={() => void submit("cancel")}
             >
-              {busy ? "Checking cancellation…" : "Cancel unpaid test order"}
+              {operationInFlight === "cancel"
+                ? "Checking cancellation…"
+                : "Cancel unpaid test order"}
+            </button>
+          )}
+        {canPreparePayment &&
+          order.state === "pending_payment" &&
+          order.paymentState === "not_started" && (
+            <button
+              className="commerce-secondary-button"
+              type="button"
+              disabled={busy || uncertain === "cancel"}
+              onClick={() => void submit("prepare")}
+            >
+              {operationInFlight === "prepare"
+                ? "Checking preparation…"
+                : uncertain === "prepare"
+                  ? "Retry the same Stripe preparation"
+                  : "Prepare Stripe test attempt"}
             </button>
           )}
       </div>
@@ -156,6 +216,7 @@ export default function Order() {
   const data = useLoaderData<{
     order: OwnedCheckoutOrder;
     csrfToken: string;
+    canPreparePayment: boolean;
     error?: string;
   }>();
   const revalidator = useRevalidator();
@@ -172,6 +233,7 @@ export default function Order() {
           key={`${data.order.id}:${data.order.version}`}
           order={data.order}
           csrfToken={data.csrfToken}
+          canPreparePayment={data.canPreparePayment}
           refresh={() => void revalidator.revalidate()}
         />
       )}

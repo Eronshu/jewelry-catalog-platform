@@ -43,7 +43,7 @@ function button(text: string) {
 async function click(element: HTMLElement) {
   await act(async () => element.click());
 }
-async function mount(status = false) {
+async function mount(status = false, canPreparePayment = false) {
   const router = createMemoryRouter(
     [
       {
@@ -63,6 +63,7 @@ async function mount(status = false) {
             order={order}
             csrfToken={"c".repeat(64)}
             refresh={() => {}}
+            canPreparePayment={canPreparePayment}
           />
         ) : (
           <p>Private order page</p>
@@ -174,6 +175,7 @@ describe("final fictional order confirmation and private status UI", () => {
     expect(host.textContent).toContain("Canadian shipping");
     expect(host.textContent).toContain("25.00");
     expect(host.textContent).toContain("No payment is available or configured");
+    expect(button("Prepare Stripe")).toBeUndefined();
     await click(button("Cancel unpaid"));
     expect(host.textContent).toContain("Test order cancelled");
     expect(host.textContent).toContain("reservation has been released");
@@ -181,6 +183,75 @@ describe("final fictional order confirmation and private status UI", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0][0]).toBe(
       `/checkout/orders/${order.id}/cancel`,
+    );
+  });
+  it("prepares only once when explicitly enabled and shows protected stock without claiming payment", async () => {
+    let resolve!: (response: Response) => void;
+    fetcher.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    await mount(true, true);
+    await act(async () => {
+      button("Prepare Stripe").click();
+      button("Prepare Stripe").click();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(button("Checking preparation").disabled).toBe(true);
+    expect(button("Cancel unpaid").disabled).toBe(true);
+    const [url, options] = fetcher.mock.calls[0];
+    expect(url).toBe(`/checkout/orders/${order.id}/prepare-payment`);
+    const form = options!.body as URLSearchParams;
+    expect([...form.keys()].sort()).toEqual([
+      "csrf",
+      "expectedVersion",
+      "requestId",
+    ]);
+    expect(form.get("expectedVersion")).toBe("1");
+    expect(form.get("requestId")).toMatch(/^[a-f0-9-]{36}$/);
+    await act(async () =>
+      resolve(
+        Response.json({
+          order: { ...order, paymentState: "processing", version: 2 },
+        }),
+      ),
+    );
+    expect(host.textContent).toContain("Test payment preparation recorded");
+    expect(host.textContent).toContain(
+      "No provider payment request has been sent",
+    );
+    expect(host.textContent).toContain("Stock stays protected");
+    expect(button("Cancel unpaid")).toBeUndefined();
+    expect(button("Prepare Stripe")).toBeUndefined();
+    expect(window.localStorage.getItem(SHOPPING_CART_KEY)).toContain(
+      "test-gold",
+    );
+  });
+  it("keeps the original preparation request after an unknown result and blocks cancellation until checked", async () => {
+    fetcher
+      .mockRejectedValueOnce(new Error("Lost response"))
+      .mockResolvedValueOnce(
+        Response.json({
+          order: { ...order, paymentState: "processing", version: 2 },
+        }),
+      );
+    await mount(true, true);
+    await click(button("Prepare Stripe"));
+    expect(document.activeElement).toBe(host.querySelector('[role="alert"]'));
+    expect(host.textContent).toContain("Do not start another payment attempt");
+    expect(button("Cancel unpaid").disabled).toBe(true);
+    await click(button("Cancel unpaid"));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await click(button("Retry the same Stripe"));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const original = fetcher.mock.calls[0][1]!.body as URLSearchParams;
+    const retry = fetcher.mock.calls[1][1]!.body as URLSearchParams;
+    expect(retry.toString()).toBe(original.toString());
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent).toContain(
+      "No provider payment request has been sent",
     );
   });
 });

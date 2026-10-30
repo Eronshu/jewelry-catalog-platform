@@ -56,6 +56,7 @@ describe("Preview configuration safety", () => {
       expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_ORIGIN");
       expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_EXPIRY");
       expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_NEW_ORDERS");
+      expect(vars).not.toHaveProperty("COMMERCE_CHECKOUT_PAYMENT_PREPARE");
     }
   });
 
@@ -89,6 +90,8 @@ describe("Preview configuration safety", () => {
         "/checkout/orders/order-fictional.data",
         "/checkout/orders/order-fictional/cancel",
         "/checkout/orders/order-fictional/cancel.data",
+        "/checkout/orders/order-fictional/prepare-payment",
+        "/checkout/orders/order-fictional/prepare-payment.data",
       ])
         expect(
           patterns.filter((pattern) => matches(pattern, path)),

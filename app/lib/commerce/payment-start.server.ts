@@ -1,3 +1,4 @@
+import { testCheckoutRulesWitness } from "./checkout-acceptance.server";
 import { legacyLabSource } from "./legacy-lab-source.server";
 import { commandHash } from "./inventory.server";
 
@@ -193,20 +194,49 @@ function receipt(
     replayed,
   };
 }
+type PaymentSource =
+  { kind: "legacy" } | { kind: "owned"; rulesJson: string; rulesHash: string };
+const ownedRulesVersion = "fictional-checkout-acceptance-v1";
 function current(
   db: D1Database,
   trusted: TrustedTestPaymentContext,
   id: string,
+  source: PaymentSource,
 ) {
+  const owned = source.kind === "owned";
   return db
     .prepare(
       `SELECT o.quote_id AS quoteId, o.snapshot, q.snapshot AS quoteSnapshot,
        q.owner_hash AS quoteOwner, q.expires_at AS quoteExpiresAt, q.created_at AS quoteCreatedAt,
        o.created_at AS createdAt, o.state, o.payment_state AS paymentState, o.fulfillment,
        o.reserve_until AS reserveUntil, o.version FROM commerce_orders o
-       JOIN commerce_quotes q ON q.id = o.quote_id WHERE ${legacyLabSource("order")} AND ${legacyLabSource("quote")} AND o.id = ? AND o.owner_hash = ?`,
+       JOIN commerce_quotes q ON q.id = o.quote_id WHERE ${
+         owned
+           ? `EXISTS (SELECT 1 FROM commerce_checkout_order_origins x
+       JOIN commerce_checkout_acceptances a ON a.acceptance_id=x.acceptance_id
+       JOIN commerce_checkout_quotes cq ON cq.quote_id=x.checkout_quote_id AND cq.quote_id=a.quote_id
+       WHERE x.order_id=o.id AND x.promoted_quote_id=q.id AND x.command_id=o.reserve_command_id
+       AND x.mode=? AND x.instance_id=? AND x.owner_hash=?
+       AND a.mode=x.mode AND a.instance_id=x.instance_id AND a.owner_hash=x.owner_hash
+       AND cq.mode=x.mode AND cq.instance_id=x.instance_id AND cq.owner_hash=x.owner_hash
+       AND cq.rules_json=? AND cq.rules_hash=? AND x.rules_hash=cq.rules_hash
+       AND o.snapshot=json_remove(cq.snapshot_json,'$.fixtureProfile'))`
+           : `${legacyLabSource("order")} AND ${legacyLabSource("quote")}`
+       } AND o.id = ? AND o.owner_hash = ?`,
     )
-    .bind(id, trusted.ownerHash)
+    .bind(
+      ...(source.kind === "owned"
+        ? [
+            trusted.mode,
+            trusted.instanceId,
+            trusted.ownerHash,
+            source.rulesJson,
+            source.rulesHash,
+          ]
+        : []),
+      id,
+      trusted.ownerHash,
+    )
     .first<Current>();
 }
 // Historical zero-tax lab quotes are fictional fixtures, not customer payable
@@ -216,6 +246,7 @@ function amount(
   trusted: TrustedTestPaymentContext,
   input: TestPaymentStartInput,
   now: number,
+  source: PaymentSource,
 ) {
   if (
     order.state !== "pending_payment" ||
@@ -248,14 +279,26 @@ function amount(
   if (
     quote.testOnly !== true ||
     quote.currency !== "CAD" ||
-    quote.rulesVersion !== "local-test-v1" ||
+    quote.rulesVersion !==
+      (source.kind === "owned" ? ownedRulesVersion : "local-test-v1") ||
     quote.expiresAt !== order.quoteExpiresAt ||
     !Array.isArray(quote.lines) ||
     quote.lines.length < 1 ||
     quote.lines.length > 20 ||
     !safe(quote.subtotalCents) ||
     !safe(quote.shippingCents) ||
-    quote.taxCents !== 0 ||
+    !safe(quote.taxCents) ||
+    (source.kind === "legacy"
+      ? quote.taxCents !== 0
+      : quote.contractVersion !== "local-checkout-v1" ||
+        quote.taxBasisPoints !== 1000 ||
+        quote.taxBaseCents !== quote.subtotalCents + quote.shippingCents ||
+        quote.taxCents !==
+          Number(
+            (BigInt(quote.subtotalCents + quote.shippingCents) * 1000n +
+              5000n) /
+              10000n,
+          )) ||
     !safe(quote.totalCents, 1) ||
     quote.shippingCents !==
       (
@@ -301,23 +344,38 @@ function amount(
  * callers must establish isolated local binding and owner authority first.
  * A recorded receipt means an intent/lock exists; no external request is sent.
  */
-export async function beginTestPaymentAttempt(
+async function begin(
   db: D1Database,
   trusted: TrustedTestPaymentContext,
   input: TestPaymentStartInput,
-  now = Date.now(),
+  now: number,
+  owned = false,
+  clock?: () => number,
+  beforeCommit?: () => Promise<void>,
 ): Promise<TestPaymentStartReceipt> {
   validate(trusted, input, now);
   // Bind this invocation to its confirmed values across asynchronous reads.
   trusted = { ...trusted };
   input = { ...input };
   const commandId = `payment-start-${input.requestId}`;
+  const initialNow = now;
+  let hookFailure: { error: unknown } | undefined;
   try {
     // No business-data reads happen until the explicit fixture binding matches.
     // This detects mistaken binding; a cloned DB can also clone this identifier.
     await assertScope(db, trusted);
+    const witness = owned ? testCheckoutRulesWitness() : null;
+    const source: PaymentSource = witness
+      ? {
+          kind: "owned",
+          rulesJson: JSON.stringify(witness),
+          rulesHash: await commandHash(witness),
+        }
+      : { kind: "legacy" };
     const hash = await commandHash({
-      operation: "test-payment-start-v1",
+      operation: owned
+        ? "owned-checkout-payment-start-v1"
+        : "test-payment-start-v1",
       requestId: input.requestId,
       reference: input.reference,
       expectedVersion: input.expectedVersion,
@@ -331,8 +389,10 @@ export async function beginTestPaymentAttempt(
       receipt(await previous(db, commandId), hash, trusted, input, replayed);
     const saved = await replay();
     if (saved) return saved;
-    const order = await current(db, trusted, input.reference);
-    const amountCents = order ? amount(order, trusted, input, now) : null;
+    const order = await current(db, trusted, input.reference, source);
+    const amountCents = order
+      ? amount(order, trusted, input, now, source)
+      : null;
     if (!order || amountCents === null) {
       // An identical call may have committed between receipt and order reads.
       const committed = await replay();
@@ -343,6 +403,26 @@ export async function beginTestPaymentAttempt(
       operation: "test-payment-snapshot-v1",
       snapshot: order.snapshot,
     });
+    if (owned) {
+      if (beforeCommit) {
+        try {
+          await beforeCommit();
+        } catch (error) {
+          hookFailure = { error };
+          throw error;
+        }
+      }
+      now = clock!();
+      validate(trusted, input, now);
+      if (
+        now < initialNow ||
+        amount(order, trusted, input, now, source) === null
+      ) {
+        const raced = await replay();
+        if (raced) return raced;
+        throw new PaymentStartError("conflict");
+      }
+    }
     try {
       await db.batch([
         db
@@ -355,8 +435,8 @@ export async function beginTestPaymentAttempt(
             `INSERT INTO commerce_payment_attempts(command_id, request_id, order_id, quote_id, owner_hash,
            mode, instance_id, provider, account_ref, amount_cents, currency, rules_version,
            snapshot_hash, expected_version, occurred_at, create_operation_key)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CAD', 'local-test-v1',
-           (SELECT CASE WHEN snapshot = ? THEN ? END FROM commerce_orders WHERE ${legacyLabSource()} AND id = ? AND owner_hash = ?), ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CAD', ?,
+           (SELECT CASE WHEN snapshot = ? THEN ? END FROM commerce_orders WHERE ${owned ? "json_extract(snapshot,'$.rulesVersion')='fictional-checkout-acceptance-v1' AND json_extract(snapshot,'$.contractVersion')='local-checkout-v1'" : legacyLabSource()} AND id = ? AND owner_hash = ?), ?, ?, ?)`,
           )
           .bind(
             commandId,
@@ -369,6 +449,7 @@ export async function beginTestPaymentAttempt(
             trusted.provider,
             trusted.accountRef,
             amountCents,
+            owned ? ownedRulesVersion : "local-test-v1",
             order.snapshot,
             snapshotHash,
             input.reference,
@@ -377,12 +458,28 @@ export async function beginTestPaymentAttempt(
             now,
             crypto.randomUUID(),
           ),
+        ...(owned
+          ? [
+              db
+                .prepare(
+                  `INSERT INTO commerce_commands(id,request_hash,created_at)
+          SELECT NULL,NULL,NULL WHERE NOT EXISTS (
+           SELECT 1 FROM commerce_payment_attempts a JOIN commerce_payment_work w ON w.attempt_command_id=a.command_id
+           JOIN commerce_orders o ON o.id=a.order_id
+           WHERE a.command_id=? AND a.order_id=? AND a.expected_version=?
+           AND o.version=a.expected_version+1 AND o.state='pending_payment' AND o.payment_state='processing' AND o.fulfillment='none'
+           AND w.version=1 AND w.next_operation='create' AND w.current_claim_id IS NULL
+          )`,
+                )
+                .bind(commandId, input.reference, input.expectedVersion),
+            ]
+          : []),
       ]);
     } catch {
       const committed = await replay();
       if (committed) return committed;
-      const latest = await current(db, trusted, input.reference);
-      if (!latest || amount(latest, trusted, input, now) === null) {
+      const latest = await current(db, trusted, input.reference, source);
+      if (!latest || amount(latest, trusted, input, now, source) === null) {
         // Recheck after the second order-read gap as well (#48).
         const raced = await replay();
         if (raced) return raced;
@@ -396,8 +493,57 @@ export async function beginTestPaymentAttempt(
     if (!recorded) throw new PaymentStartError("unavailable");
     return recorded;
   } catch (error) {
+    if (hookFailure) throw hookFailure.error;
     if (error instanceof PaymentStartError) throw error;
     // Preserve the original request key on any inconclusive storage failure.
     throw new PaymentStartError("unavailable");
   }
+}
+
+/** Historical zero-tax lab entry point remains isolated and keeps its numeric clock API. */
+export function beginTestPaymentAttempt(
+  db: D1Database,
+  trusted: TrustedTestPaymentContext,
+  input: TestPaymentStartInput,
+  now = Date.now(),
+): Promise<TestPaymentStartReceipt> {
+  return begin(db, trusted, input, now);
+}
+
+/** Owned preparation only. No provider request or permission to run the old simulator.
+ * The caller hook may reauthorize immediately before a fresh millisecond clock sample;
+ * its errors propagate unchanged and no business write follows a rejected hook. */
+export async function beginOwnedCheckoutPaymentAttempt(
+  db: D1Database,
+  trusted: TrustedTestPaymentContext,
+  input: TestPaymentStartInput,
+  clock: () => number = Date.now,
+  beforeCommit?: () => Promise<void>,
+): Promise<TestPaymentStartReceipt> {
+  const copy = <T>(value: T, keys: string[]): T => {
+    if (!shape(value, keys)) throw new PaymentStartError("invalid_request");
+    const result: Record<string, unknown> = {};
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor))
+        throw new PaymentStartError("invalid_request");
+      result[key] = descriptor.value;
+    }
+    return result as T;
+  };
+  trusted = copy(trusted, [
+    "mode",
+    "instanceId",
+    "provider",
+    "accountRef",
+    "ownerHash",
+  ]);
+  input = copy(input, ["requestId", "reference", "expectedVersion"]);
+  if (
+    trusted.provider !== "stripe" ||
+    typeof clock !== "function" ||
+    (beforeCommit !== undefined && typeof beforeCommit !== "function")
+  )
+    throw new PaymentStartError("invalid_request");
+  return begin(db, trusted, input, clock(), true, clock, beforeCommit);
 }

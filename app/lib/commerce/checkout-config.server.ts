@@ -49,3 +49,19 @@ export function checkoutAvailable(request: Request, env: unknown): boolean {
       "local-test"
   );
 }
+
+/** Separate opt-in for a fictional payment intent; never provider dispatch. */
+export function checkoutPaymentPreparationEnabled(
+  request: Request,
+  env: unknown,
+): boolean {
+  try {
+    checkoutConfig(request, env);
+    return (
+      Object.getOwnPropertyDescriptor(env, "COMMERCE_CHECKOUT_PAYMENT_PREPARE")
+        ?.value === "local-test"
+    );
+  } catch {
+    return false;
+  }
+}

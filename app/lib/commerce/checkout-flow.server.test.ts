@@ -8,6 +8,7 @@ import { createRequestHandler, RouterContextProvider } from "react-router";
 import { cloudflareContext } from "../../cloudflare-context";
 import * as CommandsRoute from "../../routes/checkout-commands";
 import * as CancelRoute from "../../routes/checkout-order-cancel";
+import * as PaymentRoute from "../../routes/checkout-order-payment";
 import * as ConfirmationRoute from "../../routes/checkout-confirm";
 import * as StatusRoute from "../../routes/checkout-order";
 import {
@@ -15,10 +16,12 @@ import {
   actCheckoutConfirmation,
   loadCheckoutOrder,
   cancelCheckoutOrder,
+  prepareCheckoutPayment,
   type OwnedCheckoutOrder,
 } from "./checkout-flow.server";
 import { handleLocalExpiry } from "./expiry-trigger.server";
 import { applyStockCommand } from "./inventory.server";
+import { expireOwnedCheckoutBatch } from "./checkout-expiry.server";
 const root = resolve(process.cwd()),
   origin = "http://127.0.0.1:8791",
   instance = "11111111-1111-4111-8111-111111111111",
@@ -175,6 +178,11 @@ const commandRoutes = {
     path: "checkout/orders/:orderId/cancel",
     module: CancelRoute,
   },
+  payment: {
+    id: "payment",
+    path: "checkout/orders/:orderId/prepare-payment",
+    module: PaymentRoute,
+  },
 };
 const dispatch = createRequestHandler(
   {
@@ -264,6 +272,12 @@ beforeAll(async () => {
     persist: { path: join(directory, "v3") },
   });
   db = platform.env.DB;
+  await db
+    .prepare(
+      "INSERT INTO commerce_payment_scope(id,mode,instance_id,stripe_account_ref,paypal_account_ref) VALUES (1,'local-test',?,'fixture-stripe','fixture-paypal')",
+    )
+    .bind(instance)
+    .run();
 }, 30000);
 afterAll(async () => {
   await platform?.dispose();
@@ -339,6 +353,7 @@ describe("visible customer order flow on real temporary D1", () => {
     for (const path of [
       "/checkout/commands",
       "/checkout/orders/order-placeholder/cancel",
+      "/checkout/orders/order-placeholder/prepare-payment",
     ]) {
       const response = await dispatch(get(path), context());
       expect(response.status).toBe(405);
@@ -356,6 +371,238 @@ describe("visible customer order flow on real temporary D1", () => {
     }
     expect(await count("commerce_checkout_guest_sessions")).toBe(before);
   });
+  it("prepares an owned taxed order through JSON, replays one intent and preserves attempted stock across pause and expiry", async () => {
+    const client = await browser();
+    const created = await create(client);
+    const enabled = settings(db, {
+      COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test",
+    });
+    const path = `/checkout/orders/${created.orderId}/prepare-payment`;
+    const input = {
+      csrf: client.csrfToken,
+      requestId: crypto.randomUUID(),
+      expectedVersion: "1",
+    };
+    const before = await count("commerce_payment_attempts");
+    const prepare = () =>
+      dispatch(post(path, client.cookie, input), context(enabled));
+    const response = await prepare();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    const body = await response.json();
+    expect(body).toMatchObject({
+      order: {
+        id: created.orderId,
+        paymentState: "processing",
+        state: "pending_payment",
+        totalCents: 4400,
+        version: 2,
+      },
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /owner_hash|ownerHash|createOperationKey|request_hash|command_id|rulesHash|accountRef/,
+    );
+    expect(await (await prepare()).json()).toEqual(body);
+    expect(await count("commerce_payment_attempts")).toBe(before + 1);
+    expect(
+      await db
+        .prepare(
+          "SELECT amount_cents,rules_version,currency FROM commerce_payment_attempts WHERE order_id=?",
+        )
+        .bind(created.orderId)
+        .first(),
+    ).toEqual({
+      amount_cents: 4400,
+      rules_version: "fictional-checkout-acceptance-v1",
+      currency: "CAD",
+    });
+    expect(
+      (
+        await dispatch(
+          post(path, client.cookie, {
+            ...input,
+            requestId: crypto.randomUUID(),
+          }),
+          context(enabled),
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await cancelCheckoutOrder(
+          post(`/checkout/orders/${created.orderId}/cancel`, client.cookie, {
+            csrf: client.csrfToken,
+            releaseKey: crypto.randomUUID(),
+            expectedVersion: "2",
+          }),
+          settings(),
+          created.orderId,
+        )
+      ).status,
+    ).toBe(409);
+    await expireOwnedCheckoutBatch(
+      db,
+      { mode: "local-test", instanceId: instance, canonicalOrigin: origin },
+      { now: created.quote.expiresAt + 1 },
+    );
+    expect(
+      await db
+        .prepare(
+          "SELECT checkout_reserved FROM commerce_inventory WHERE variant_id=?",
+        )
+        .bind(created.variantId)
+        .first(),
+    ).toEqual({ checkout_reserved: 1 });
+    expect(
+      (
+        await prepareCheckoutPayment(
+          post(path, client.cookie, input),
+          settings(),
+          created.orderId,
+        )
+      ).status,
+    ).toBe(503);
+    const status = await loadCheckoutOrder(
+      get(`/checkout/orders/${created.orderId}`, client.cookie),
+      settings(),
+      created.orderId,
+    );
+    expect(await status.json()).toMatchObject({
+      canPreparePayment: false,
+      order: { paymentState: "processing", version: 2 },
+    });
+    expect(await count("commerce_payment_capture_facts")).toBe(0);
+  });
+  it("rejects disabled, other-owner, CSRF, cross-origin and client-amount preparation without writes", async () => {
+    const client = await browser(),
+      other = await browser();
+    const created = await create(client);
+    const enabled = settings(db, {
+      COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test",
+    });
+    const path = `/checkout/orders/${created.orderId}/prepare-payment`;
+    const input = {
+      csrf: client.csrfToken,
+      requestId: crypto.randomUUID(),
+      expectedVersion: "1",
+    };
+    const before = await count("commerce_payment_attempts");
+    const invoke = (request: Request, env = enabled) =>
+      prepareCheckoutPayment(request, env, created.orderId);
+    expect(
+      (await invoke(post(path, client.cookie, input), settings())).status,
+    ).toBe(503);
+    expect(
+      (
+        await invoke(
+          post(path, other.cookie, { ...input, csrf: other.csrfToken }),
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await invoke(
+          post(path, client.cookie, { ...input, csrf: "f".repeat(64) }),
+        )
+      ).status,
+    ).toBe(403);
+    const crossOrigin = post(path, client.cookie, input);
+    crossOrigin.headers.set("Origin", "https://example.invalid");
+    // The loopback availability gate rejects cross-origin headers before auth.
+    expect((await invoke(crossOrigin)).status).toBe(404);
+    expect(
+      (await invoke(post(path, client.cookie, { ...input, amountCents: "1" })))
+        .status,
+    ).toBe(422);
+    expect(await count("commerce_payment_attempts")).toBe(before);
+    expect(
+      await db
+        .prepare("SELECT payment_state,version FROM commerce_orders WHERE id=?")
+        .bind(created.orderId)
+        .first(),
+    ).toEqual({ payment_state: "not_started", version: 1 });
+  });
+  it.each(["expiry", "revocation"])(
+    "reauthorizes payment preparation after source reads when session %s occurs",
+    async (change) => {
+      const client = await browser();
+      const created = await create(client);
+      let now = Date.now(),
+        changed = false;
+      const before = await count("commerce_payment_attempts");
+      const delayed = new Proxy(db, {
+        get(target, property) {
+          if (property !== "prepare") {
+            const value = Reflect.get(target, property);
+            return typeof value === "function" ? value.bind(target) : value;
+          }
+          return (sql: string) => {
+            const wrap = (
+              statement: D1PreparedStatement,
+            ): D1PreparedStatement =>
+              new Proxy(statement, {
+                get(stmt, method) {
+                  if (method === "bind")
+                    return (...values: unknown[]) => wrap(stmt.bind(...values));
+                  if (
+                    method === "first" &&
+                    sql.includes("q.owner_hash AS quoteOwner")
+                  )
+                    return async () => {
+                      const result = await stmt.first();
+                      const session = await db
+                        .prepare(
+                          "SELECT expires_at FROM commerce_checkout_guest_sessions WHERE owner_hash=(SELECT owner_hash FROM commerce_checkout_order_origins WHERE order_id=?)",
+                        )
+                        .bind(created.orderId)
+                        .first<{ expires_at: number }>();
+                      if (change === "expiry") now = session!.expires_at;
+                      else
+                        await db
+                          .prepare(
+                            "UPDATE commerce_checkout_guest_sessions SET revoked_at=? WHERE owner_hash=(SELECT owner_hash FROM commerce_checkout_order_origins WHERE order_id=?)",
+                          )
+                          .bind(now, created.orderId)
+                          .run();
+                      changed = true;
+                      return result;
+                    };
+                  const value = Reflect.get(stmt, method);
+                  return typeof value === "function" ? value.bind(stmt) : value;
+                },
+              });
+            return wrap(target.prepare(sql));
+          };
+        },
+      });
+      const response = await prepareCheckoutPayment(
+        post(
+          `/checkout/orders/${created.orderId}/prepare-payment`,
+          client.cookie,
+          {
+            csrf: client.csrfToken,
+            requestId: crypto.randomUUID(),
+            expectedVersion: "1",
+          },
+        ),
+        settings(delayed, { COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test" }),
+        created.orderId,
+        () => now,
+      );
+      expect(changed).toBe(true);
+      expect(response.status).toBe(403);
+      expect(await count("commerce_payment_attempts")).toBe(before);
+      expect(
+        await db
+          .prepare(
+            "SELECT payment_state,version FROM commerce_orders WHERE id=?",
+          )
+          .bind(created.orderId)
+          .first(),
+      ).toEqual({ payment_state: "not_started", version: 1 });
+    },
+  );
   it.each(["expiry", "revocation"])(
     "rejects cancellation when session %s occurs during the owned read",
     async (change) => {

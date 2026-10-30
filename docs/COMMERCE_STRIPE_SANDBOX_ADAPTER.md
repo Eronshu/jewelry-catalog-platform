@@ -1,6 +1,6 @@
 # Stripe 托管 Sandbox 适配：Issue #73
 
-状态：本地实现、离线验证与独立审查完成，待准确 head CI/PR 收口；前置 #72 已合并，main `3333576` / CI108 通过。当前仍不能付款。本片不读账户凭据、不接路由、不调用服务商、不改订单或库存。
+状态：#74已合并main `395dd1e`；准确head `438e31d` CI109、独立审查及main CI110通过。当前#75进行订单支付准备接线，见[范围](./COMMERCE_OWNED_PAYMENT_PREPARATION.md)。当前仍不能付款。本片不读账户凭据、不接路由、不调用服务商、不改订单或库存。
 
 ## 交付边界
 
@@ -35,6 +35,6 @@ Stripe 的 [Session expires_at](https://docs.stripe.com/api/checkout/sessions/cr
 
 下一项直接将此适配接到共享订单及私有状态页面，必要的旧零税/fixture 限制兼容与 forward migration 随接线功能审查，不另造支付账本。覆盖托管付款发起、固定返回、可靠核查/验签事件、收款与库存分配，并始终区分待处理、失败、未知和已核实收款。PayPal 在此契约稳定后接入。
 
-经营者回来后准备专用 [Stripe Sandbox](https://dashboard.stripe.com/) 与 [PayPal Developer/Sandbox](https://developer.paypal.com/dashboard/) 账户资格；届时再按已完成的安全本机配置流程输入测试凭据。不要在聊天、Issue、PR 或仓库里粘贴密钥、密码或银行卡资料。测试账户连接不授权正式支付、计费购买、生产资源或部署。没有凭据和授权前，真实服务商、认证/拒绝/退款及完整收款→本站订单/库存验收都保持未完成。
+用户截图已显示 [Stripe Sandbox](https://dashboard.stripe.com/) 和 [PayPal Developer/Sandbox](https://developer.paypal.com/dashboard/) 的CA测试Business/Personal账户界面可用；这不是本机认证或实际支付通过。安全本机配置流程准备完成后再输入测试凭据，不重复要求注册。不要在聊天、Issue、PR 或仓库里粘贴密钥、密码或银行卡资料。测试账户连接不授权正式支付、计费购买、生产资源或部署。没有凭据和授权前，真实服务商、认证/拒绝/退款及完整收款→本站订单/库存验收都保持未完成。
 
 官方核对日期 2026-10-30：[托管 Checkout](https://docs.stripe.com/checkout/quickstart)、[创建 Session](https://docs.stripe.com/api/checkout/sessions/create)、[关闭 Session](https://docs.stripe.com/api/checkout/sessions/expire)、[Webhook 原始签名与投递](https://docs.stripe.com/events/manage-webhook-endpoints)、[API 版本](https://docs.stripe.com/api/versioning)。建议固定该日文档版本 `2026-10-28.endive`，实际配置和事件版本还须 Sandbox 核对；本文不固化费用、法律或税务结论。

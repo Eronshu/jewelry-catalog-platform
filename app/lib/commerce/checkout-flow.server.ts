@@ -1,4 +1,12 @@
-import { checkoutConfig, checkoutAvailable } from "./checkout-config.server";
+import {
+  checkoutConfig,
+  checkoutAvailable,
+  checkoutPaymentPreparationEnabled,
+} from "./checkout-config.server";
+import {
+  beginOwnedCheckoutPaymentAttempt,
+  PaymentStartError,
+} from "./payment-start.server";
 import {
   loadTestCheckoutSession,
   resolveTestCheckoutSession,
@@ -101,7 +109,8 @@ function failure(error: unknown): Response {
   if (
     error instanceof CheckoutAcceptanceError ||
     error instanceof CheckoutOrderError ||
-    error instanceof CheckoutReleaseError
+    error instanceof CheckoutReleaseError ||
+    error instanceof PaymentStartError
   ) {
     if (error.code === "unavailable")
       return json(
@@ -329,10 +338,72 @@ export async function loadCheckoutOrder(
     );
     const order = await owned(env.DB, session.context, id);
     if (!order) return inaccessible();
-    return json({ csrfToken: session.csrfToken, order });
+    return json({
+      csrfToken: session.csrfToken,
+      order,
+      canPreparePayment: checkoutPaymentPreparationEnabled(request, env),
+    });
   } catch (error) {
     if (error instanceof CheckoutSessionError && error.code !== "unavailable")
       return inaccessible();
+    return failure(error);
+  }
+}
+
+/** Local synthetic preparation only. No provider client or transport is imported. */
+export async function prepareCheckoutPayment(
+  request: Request,
+  env: Env,
+  id: string,
+  clock: () => number = Date.now,
+) {
+  try {
+    const config = checkoutConfig(request, env);
+    if (!checkoutPaymentPreparationEnabled(request, env))
+      throw new Response("Test payment preparation is disabled", {
+        status: 503,
+      });
+    const form = await readCommerceForm(request);
+    fields(form, ["csrf", "requestId", "expectedVersion"]);
+    const session = await authorizeTestCheckoutMutation(
+      env.DB,
+      config,
+      request,
+      form.get("csrf"),
+      clock,
+    );
+    if (!(await owned(env.DB, session.context, id))) return inaccessible();
+    const version = form.get("expectedVersion")!;
+    if (!/^[1-9][0-9]{0,15}$/.test(version))
+      throw new Response("Invalid order version", { status: 422 });
+    const current = await authorizeTestCheckoutMutation(
+      env.DB,
+      config,
+      request,
+      form.get("csrf"),
+      clock,
+    );
+    await beginOwnedCheckoutPaymentAttempt(
+      env.DB,
+      { ...current.context, provider: "stripe", accountRef: "fixture-stripe" },
+      {
+        requestId: form.get("requestId")!,
+        reference: id,
+        expectedVersion: Number(version),
+      },
+      clock,
+      async () => {
+        await authorizeTestCheckoutMutation(
+          env.DB,
+          config,
+          request,
+          form.get("csrf"),
+          clock,
+        );
+      },
+    );
+    return json({ order: await owned(env.DB, current.context, id) });
+  } catch (error) {
     return failure(error);
   }
 }
