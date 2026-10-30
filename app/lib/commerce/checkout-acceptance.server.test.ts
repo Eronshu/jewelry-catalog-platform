@@ -1213,11 +1213,13 @@ describe("isolated durable test checkout quote acceptance", () => {
     );
     const accepting = acceptance(quote.quoteId, item.selection);
     const before = await counts();
-    for (const pending of [
-      issueTestCheckoutQuote(brokenRead, context, issuing, clock),
-      acceptTestCheckoutQuote(brokenRead, context, accepting, clock),
+    // Start each failure only when its rejection handler can be attached; eager
+    // promises can reject unhandled while the earlier operation is still awaited.
+    for (const operation of [
+      () => issueTestCheckoutQuote(brokenRead, context, issuing, clock),
+      () => acceptTestCheckoutQuote(brokenRead, context, accepting, clock),
     ]) {
-      const error = await pending.catch((caught: unknown) => caught);
+      const error = await operation().catch((caught: unknown) => caught);
       expect(error).toMatchObject({
         name: "CheckoutAcceptanceError",
         code: "unavailable",
