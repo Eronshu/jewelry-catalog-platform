@@ -105,3 +105,7 @@ npx vitest run app/lib/commerce/environment.server.test.ts app/lib/auth/admin-ac
 本 PR仅文档及测试，可撤回，不改 schema/默认配置/运行代码/资产路由/账户；现有商品、购物车、恢复流程继续用原 gate。不要为了让未来配置示例“跑起来”去修改当前mode、导入真实数据或暴露本机端口。
 
 未来运行模式的回滚需保持旧订单兼容：停新订单/新尝试，继续验真接收回调、核查未明付款/退款和履约/通知。单独某家故障只停该渠道新尝试；两家是首版需求，不能自动宣称缺一家也已上线。保留账本/事件/审计及环境映射；不恢复旧库覆盖后来支付事实、不通过撤销密钥或禁收所有回调充当日常停单开关。未完成这些故障/恢复验收不得营业。
+
+## L04d 本机凭据增量（2026-10-29）
+
+[专用游客凭据](./COMMERCE_CHECKOUT_GUEST_CAPABILITY.md)只对受信任本机虚构fixture提供hash-only会话/完整scope/到期撤销及CSRF，旧lab Cookie不复用，HTTPS/Sandbox/live仍拒绝且无路由/runner配置启用。Cookie不按端口隔离；同host恶意本地服务可能收到原bearer，实例化名称/HttpOnly/Origin不能消除此风险。新增scope不是DB绑定验真或真实浏览器身份；HTTP消费者的初始化竞态、限流、授权时点和恢复另审查。
