@@ -350,3 +350,13 @@
 - **未激活与停止：**只内部合成fixture，不接HTTP/UI/runner/自动过期任务或付款，不操作账户/凭据、真实顾客/Google资料、资源/计费/部署。未来付款状态负面用例是私有注入，不冒称实际支付集成。回退停新释放并保留全部审计/流水/状态，不删收据或复原旧余额；后续游客凭据、有归属驱动和页面另立PR。
 - **定向验证与准确提交审查：**新增28项真实临时D1测试通过（7.4秒），范围格式/lint/diff检查通过。`execution_gate_contract_audit` 核对写提交 `8c510a3ae31fe385d95372a8d9cac5537b50f0c5` 与根整合 `78061cd74ef99ce695f8d2e7ddf3f1d5f1aee095` 三个blob完全相同，无未解决发现。覆盖含旧数据升级、UPDATE/REPLACE/UPSERT剩余占用、晚行ABORT/IGNORE和忽略root UPDATE后整组回滚/恢复floor；未来付款状态/外部scope attempt只在私有fixture临时注入，先证明正常插入被拒，再在finally恢复原guard后验证API/SQL均拒绝释放，未冒称真实支付。Promise竞争立即挂all/allSettled处理器；审查未改文件或重复跑测试。完整检查实际结果后补，不证明商家、Safari或Sandbox准备完成。
 - **实际整合检查：**format/lint/生成项目typecheck通过；全部73文件1376项应用测试通过（86.25秒，`--maxWorkers=2`），其中本片新增28项真实临时D1用例；6项付款HTTP模拟、生产构建和Admin资源保护检查通过。没有改全局CI并发/超时、跳过用例或放宽断言。后续仅补本证据，格式/文件链接/diff另核对，不重复未变代码检查；准确head CI、独立审查无未解决项后才代合并，合并树/源归档清理/main CI另记PR回执。这不是实际服务商Sandbox、商家/UAT或Safari验收。
+
+## 2026-10-29：L04d 专用本机游客凭据与请求保护（Issue #69）
+
+- **前置收口：**#68 head `017f6b4` CI103（40984779383）与独立审查通过后代合并为main `62d8aa3`；合并树 `b2f7634` 等于已测试/发布树，main CI104（40985330405）成功。73文件1376项应用测试、6项HTTP模拟及工程检查通过。源 `7c59c2d` / 核心 `8c510a3` 已在 `.git/commerce-archive/2026-10-29-checkout-owned-release/source.bundle` 全历史归档验证后清理本地分支/工作树，远程分支仍无删除通道。干净更新main建立 `codex/checkout-guest-capability`。
+- **受限设计与分工：**根负责接口/文档/整合，`contract_review` 在 `/tmp/jewelry-checkout-guest` 只写0020迁移/服务/真实D1测试，`execution_gate_contract_audit` 完成限定设计审查；最多两子代理同时运行，实际模型设置不可读。DB hash-only opaque session支持到期/单向撤销且不引入签名密钥；owner服务端选取，token hash/CSRF完整scope域分离，坏/过期身份和读失败不能自动替换。最终代码审查/实际测试后补，不用设计意见代替实现审查。
+- **明确限制：**仅受信本机合成fixture，无HTTP/runner/配置、业务订单写入消费者、真实Google/PII、支付/账户/计费或部署。Cookie不按端口隔离；未来HTTP消费者仍需bootstrap稳定、授权时点/长等待重验、限流及私有恢复，HTTPS/真实Safari另验收。回退停消费者，保留hash/撤销/订单账本，不复活身份或重绑旧单。
+- **2026-10-30审查修正/恢复：**独立审查发现逗号合并Cookie被当作无凭据而新建owner、正数不足一秒余量floor导致Max-Age=0；均修正并增加拒绝前零DB访问/记录不变及精确到期回归。代理上轮因额度中断，三个未提交文件保留在原工作树，未重生成；时钟已过提示恢复时间且ordinaryUsageAllowed后仅恢复必要delta审查，无未解决发现，实际模型仍不可读。修复后25项真实D1用例通过（5.70秒），范围format/lint通过；源工作树提交 `f1e808b` 整合为 `8600056`，三blob与审查结果一致。
+- **整合检查进行中：**全仓format/lint通过；首次typecheck在测试异构补丁数组的推断可带undefined处失败，未运行后续测试/构建。仅给插入测试数据数组明确Record类型，不改运行逻辑/断言；范围format/lint复验通过，再运行生成typecheck及首次全套应用/6项HTTP模拟/构建。实际结果后补，不把未执行的步骤记通过。
+- **执行纠偏：**用户指出内部模型拆片过细、支付可见进度不足。当前任务收口后直接推进可演示的本地下单→Stripe托管Sandbox衔接→PayPal链路；必要兼容随聚焦功能整合，保留关键金额/库存/权限/重复扣款测试，不继续扩展外围或重复全仓审查。实际服务商与业务状态仍分别验收，不用按钮/模拟冒充完成。
+- **最终本地证据：**明确测试数组类型后生成typecheck通过；首次执行的全部74文件1401项应用测试、6项付款HTTP模拟、生产构建及Admin资源保护全部通过。未重复先前已过的全仓format/lint，仅对改动测试/文档做范围复验。独立审查确认Cookie语法/不足一秒修正无未解决发现；源/整合生产blob保持e10cab0b/e37d6fb9，测试type-only delta不改内容/断言，最终blob `521abc16c0751c55341ed373f79e7f140ef9ac8e` 已核对。路线图按用户反馈优先纵向下单/Stripe/PayPal，仍保留实际Sandbox及金融/库存门槛；不是授权真实账户/收款/部署。准确head CI/合并树/归档/main CI实际完成后另记。
