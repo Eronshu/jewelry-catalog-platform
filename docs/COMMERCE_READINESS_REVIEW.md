@@ -1,6 +1,6 @@
 # 商城准备度审查与 C 路线设计
 
-**设计基线：2026-10-18；状态同步：2026-10-29。C方向已选，main `da3d2be`（#64准确head CI98、独立审查和main CI99通过）。内部报价接受已合并；当前Issue #65 / L04b通过[明确来源的订单/原子预留](./COMMERCE_CHECKOUT_ORDER_RESERVATION.md)复用既有权威，不激活HTTP/runner/支付。owned释放与其后凭据/页面未验收，完整商城尚未完成。** 历史调查按各节日期阅读，最新交付及检查见[执行日志](./COMMERCE_EXECUTION_LOG.md)。
+**设计基线：2026-10-18；状态同步：2026-10-29。C方向已选，main `95ff4ed`（#66准确head CI101、独立审查和main CI102通过）。内部报价接受、明确来源/原子预留已合并；当前Issue #67 / L04c只做[自有未付款释放](./COMMERCE_CHECKOUT_OWNED_RELEASE.md)，不接HTTP、runner、页面、自动任务或付款，完整商城尚未验收。** 历史调查按各节日期阅读，最新检查见[执行日志](./COMMERCE_EXECUTION_LOG.md)。
 
 业务事实和决定截止点以 [需求](./ONLINE_SALES_REQUIREMENTS.md) 为准；A/B 比较及冻结 V1 的关系见 [ADR-001](./ADR_001_COMMERCE_ROUTE_C.md)；任务执行顺序唯一入口为 [实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md)。没有先试用 Shopify 的执行门槛。2026-10-18 用户进一步缩小首版：只售现货、缺货不可购买；Facebook 先隔离留量，完整手工订单后续再做。此前缺货接单模型从首版移出。
 

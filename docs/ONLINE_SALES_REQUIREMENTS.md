@@ -1,8 +1,8 @@
 # 首饰商城：业务需求与待决事项
 
-**状态同步：2026-10-29 · C路线已确定；main `da3d2be`（#64准确head CI98、独立审查和main CI99通过），完整营业闭环未形成。** 内部虚构最终报价/接受已合并；本片Issue #65 / L04b通过显式来源映射接共享订单根和原子预留，不改成零税值，不连接旧lab入口、顾客HTTP、付款或通知。释放、游客凭据和页面各自后续验收；公开站仍为虚构作品目录。
+**状态同步：2026-10-29 · C路线已确定；main `95ff4ed`（#66准确head CI101、独立审查和main CI102通过）。** 内部虚构报价接受及来源明确的原子预留已有；本片Issue #67 / L04c增加自有未付款释放，不等于已付款取消/退款或自动到期任务。公开购物页仍为临时报价，未接持久订单/真实支付，完整营业闭环与真实环境未验收。
 
-下文是业务要求/测试假设/营业门槛，不代表全部已实现。入口见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务) 与 [执行记录](./COMMERCE_EXECUTION_LOG.md)。[关联/恢复契约](./COMMERCE_PROVIDER_EVENT_CONTRACT.md) 区分事件验真、对象归属、只读查询与收款，PayPal批准不等于capture；0016仍按同实例任意收件阻止两渠道CREATE。已合并的[报价接受边界](./COMMERCE_CHECKOUT_ACCEPTANCE.md)不变更此规则；接受本身不占库。本片[订单来源桥接](./COMMERCE_CHECKOUT_ORDER_RESERVATION.md)明确隔离lab并复用共享权威，只有完整事务成功才形成未付款预留；收据不代表paid或可履约。真实资料、经营/账户和支付门槛照旧，测试假设不是顾客承诺。
+下文是业务要求/测试假设/营业门槛，不代表全部已实现。入口见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务) 与 [执行记录](./COMMERCE_EXECUTION_LOG.md)。[关联/恢复契约](./COMMERCE_PROVIDER_EVENT_CONTRACT.md) 区分事件验真、对象归属、只读查询与收款，PayPal批准不等于capture；0016仍按同实例任意收件阻止两渠道CREATE。已合并的[报价接受边界](./COMMERCE_CHECKOUT_ACCEPTANCE.md)不变更此规则；接受本身不占库。已合并的[订单来源桥接](./COMMERCE_CHECKOUT_ORDER_RESERVATION.md)明确隔离lab并复用共享权威，只有完整事务成功才形成未付款预留；收据不代表paid或可履约。本片[未付款释放](./COMMERCE_CHECKOUT_OWNED_RELEASE.md)只处理尚无支付尝试的订单，未知/已付款状态不得释放。真实资料、经营/账户和支付门槛照旧，测试假设不是顾客承诺。
 
 本文是后续商业阶段的业务依据，不改写冻结的 [V1 规格](../PROJECT_SPEC.md)。技术模型、安全和验收见 [准备度审查](./COMMERCE_READINESS_REVIEW.md)，任务顺序见 [实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md)，选型理由和 A/B 比较见 [ADR-001](./ADR_001_COMMERCE_ROUTE_C.md)。
 
