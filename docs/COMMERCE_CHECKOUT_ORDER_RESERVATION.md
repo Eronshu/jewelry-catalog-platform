@@ -44,3 +44,7 @@
 完整format/lint/生成typecheck/应用测试/付款HTTP模拟/生产构建、准确head CI及独立审查完成后才代合并；验证合并树，先归档源再清理，main CI后才下一片。当前不把fixture结果当真机Safari/VoiceOver、真实Sandbox或小姨UAT证据。
 
 回退停止新创建，保留来源、快照、订单/行/流水和占用；不能用旧lab命令、删来源映射、删订单、复原余额或down migration释放新预留。已有内部fixture占用等待后续已审查的owned释放路径；不存在真实顾客订单的手工SQL应急捷径。若该路径尚未完成，就持续阻断任何运营消费者。
+
+## 后续0019释放演进
+
+#66合并并通过main CI102后，Issue #67按[自有未付款释放契约](./COMMERCE_CHECKOUT_OWNED_RELEASE.md)演进原库存下限/订单更新守卫。0018创建/来源语义不改，新增命令仍无HTTP/runner或自动任务；仅有合法原子释放证据才可取消并降低占用。旧lab继续无法处理这些订单，支付与实际资料门槛不变。
