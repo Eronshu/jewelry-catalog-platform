@@ -25,6 +25,12 @@ if (expiryMode !== undefined && expiryMode !== "local-test")
   );
 const expiryToken = randomBytes(32).toString("hex");
 const checkoutInstance = randomUUID();
+const preparationMode = process.env.COMMERCE_LOCAL_PAYMENT_PREPARE;
+if (preparationMode !== undefined && preparationMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_PAYMENT_PREPARE only accepts 1; preparation sends no provider request.",
+  );
+const preparePayment = preparationMode === "1";
 const privateSettings = {
   ...places,
   ...(expiryToken ? { COMMERCE_LOCAL_EXPIRY_TOKEN: expiryToken } : {}),
@@ -70,6 +76,9 @@ writeFileSync(
         COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
         COMMERCE_CHECKOUT_EXPIRY: "local-test",
         COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
+        ...(preparePayment
+          ? { COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test" }
+          : {}),
       },
       d1_databases: [
         {
@@ -131,6 +140,10 @@ for (let id = 1; id <= 3; id++) {
 }
 const seed = join(directory, "fictional.sql");
 const statements = [];
+if (preparePayment)
+  statements.push(
+    `INSERT INTO commerce_payment_scope(id,mode,instance_id,stripe_account_ref,paypal_account_ref) VALUES (1,'local-test','${checkoutInstance}','fixture-stripe','fixture-paypal');`,
+  );
 for (const [index, name] of ["Orbit", "Bar", "Pendant"].entries()) {
   const id = index + 1;
   statements.push(
@@ -177,6 +190,10 @@ wrangler([
 console.log(
   `Fictional state preserved at: ${directory}\nShopping preview: http://127.0.0.1:${port}/products/fictional-0\nDeveloper lab: http://127.0.0.1:${port}/commerce-lab\nCtrl-C stops the server. A new run creates a new database; no existing data is deleted.`,
 );
+if (preparePayment)
+  console.log(
+    "Stripe test preparation enabled: records an intent and protects fictional stock. No provider request or payment is sent; existing attempts cannot use unpaid cancellation/expiry.",
+  );
 // Validate the driver before starting a child that would otherwise be orphaned.
 const expiry = expiryToken
   ? createLocalExpiryDriver({

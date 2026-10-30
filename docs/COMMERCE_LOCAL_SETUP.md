@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-10-30: #70 merged main `bbff613`; exact-head CI105, independent review and main CI106 passed. Quote acceptance, shared-order reservations/release and dedicated local guest sessions exist. Issue #71 connects the visible fictional confirmation→owned unpaid order/status/cancel journey with bounded local expiry driving; provider payments remain disconnected. Only fixed fictional profiles may be persisted; arbitrary preview/Google contact data must not be saved. Localhost cookies are not port-isolated. HTTPS resources, actual Sandbox, Safari/UAT and business readiness remain separate gates; legacy lab/payment constraints and0016 are not relaxed by this slice.
+Status checked 2026-10-30: #72's owned unpaid order flow and #74's Stripe Sandbox adapter are merged at main `395dd1e`; exact-head CI109, independent review and main CI110 passed for #74. Issue #75 connects owned orders to the existing payment preparation record and private status, with a separate default-off local switch. It sends no provider request. Actual Sandbox authentication/payment, Safari/UAT, arbitrary customer data and business readiness remain unverified.
 
 ## Availability policy
 
@@ -113,3 +113,19 @@ The confirmation stores only the fixed synthetic profile; no actual customer or 
 To pause **new** orders in this controlled test configuration, remove/disable `COMMERCE_CHECKOUT_NEW_ORDERS` while keeping the same instance/origin, expiry configuration and private task capability. Quote/confirm POSTs close; an existing session can still see pending orders, open status and cancel, and the task can still expire eligible holds. Do not remove expiry settings, revive sessions, rebind owners or clear the database as rollback. The standard runner itself starts a new DB on each invocation; reopening a preserved DB requires a separately reviewed recovery procedure, not changing this command to use production paths.
 
 The compiled local browser journey has been checked with fictional pickup/shipping orders, refresh, pending-order recovery and cancellation. At 390px the order had no horizontal overflow and both order actions measured 44px high. This is not genuine iPhone Safari, VoiceOver, owner UAT or payment-provider acceptance. After rebuilding while the runner is open, stop and restart it before checking assets; that creates a fresh test database, not a recovery of the previous instance. Stop with Ctrl-C after testing; in-flight writes may already have committed and the temporary directory is preserved.
+
+## Optional owned Stripe preparation (Issue #75)
+
+After rebuilding this feature, opt in explicitly:
+
+```sh
+COMMERCE_LOCAL_PAYMENT_PREPARE=1 npm run commerce:local
+```
+
+The runner seeds the existing fixture payment scope with the same checkout instance and exposes **Prepare Stripe test attempt** on an owned unpaid order. The default runner and committed deployment configuration keep this off. No merchant key is read; no Stripe HTTP request, hosted Session, charge, capture or stock allocation is created. The page says exactly that. This is a test of the persisted order/payment boundary, not the actual payment acceptance test.
+
+Preparation fixes the server's accepted CAD amount/rules and moves payment state to `processing` once in the existing attempt/work records. Double clicks/retries keep the original request. An uncertain response blocks cancellation until the same request/status is checked. Once an attempt exists, stock remains protected even after the original ten-minute deadline; ordinary unpaid cancellation/expiry cannot release it. The historical fixture executor is fenced off from owned attempts. Do not leave this as an unattended sales workflow: later provider dispatch/query/reconciliation must resolve these holds.
+
+Stop new preparation by removing the opt-in or server preparation flag, while retaining local mode, the original database and owned session for existing private reads. The standard runner creates a new temporary database on every invocation; restarting it is **not** restoration of the old test session/database. Never delete payment/order history, force stock release or undo migration0021 as a rollback. Preserve the printed old directory and use a reviewed forward repair if needed. Full contract and remaining payment work: [owned preparation](./COMMERCE_OWNED_PAYMENT_PREPARATION.md).
+
+User-provided screenshots show Stripe Sandbox/Test mode and PayPal CA Business/Personal Sandbox accounts are available. They do not verify local credentials, API authentication, webhook delivery or an end-to-end paid order. Use secure local configuration only once that integration is ready; never send secrets in chat or commit them.

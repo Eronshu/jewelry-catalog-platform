@@ -385,3 +385,17 @@
 - **检查与独立修正：**代理18项离线用例、范围格式/lint/严格两文件类型通过，断言global fetch未被调用。根整合完整format/lint/生成项目typecheck、77文件1435项应用测试（97.01秒）、6项付款HTTP模拟及生产构建/Admin资产保护通过。独立审查发现Dashboard Adaptive Pricing可使顾客呈现币种不同而接口仍返回integration CAD；源 `7e73405` / 根 `3507d51` 仅增加显式关闭参数与现有测试断言，修复后18项及范围格式/lint/严格类型通过，未重复无影响全套检查。准确head CI仍需最终运行。
 - **最终独立结论：**`customer_flow_review` 核对最终源 `7e73405e51a722aae0b0a66a0cbe7decc75b4821`，模块blob `0da4b877507cd6e573d47d40e0b3f2a597b4fb0f`、测试blob `28753dde55e32f686d9029bff9ebb4da5f2c9ab8` 与根完全一致，无未解决发现；只复核两行修正，没有重复测试/全仓扫描。当前无用户页面变化，不补无关浏览器测试；实际Sandbox、收款/库存裁决、持久去重、Safari/UAT均未通过，本片不冒充付款链路。
 - **发布夹具修正：**首轮GitHub create_tree被仓库密钥保护以422拒绝，尚未创建分支/ref/PR；触发的是已确认未注册/未使用的虚构测试密钥形状字符串。保持保护开启，源 `594254c` / 根 `a16e72f` 仅改为显式生成的零/一/二非功能性夹具，18项测试及范围格式/lint通过，生产blob不变。独立只读复核确认live拒绝/轮换/异步突变与原断言保留、没有真实凭据隐藏或保护配置变更，无未解决项；最终测试blob `90f8af8b0c5bce3e8dc37b381b334576accaa4bc`。此后按普通受保护发布重新验证树，不使用跳过保护的授权。
+
+## 2026-10-30：自己的订单接支付准备（Issue #75）
+
+- **前置已完成：**#74准确head `438e31d7a16be6c3d91decfc8a2f8e8393f6d568` CI109（41103972697）与独立支付审查/两小delta复核通过后代合并main `395dd1e3bbb7f1c706b25e1b2c9be2c5322994e6`，树 `0ec3b42d890e45c59dfa4908dded2f6a9ed7e2b0` 等于验收/发布树；main CI110（41113421230）通过。合并回执网络丢失，先GET确认实际已合并，未盲重发。源 `1e710963` / 核心 `594254cf` 在 `.git/commerce-archive/2026-10-30-stripe-sandbox-adapter/source.bundle` 全历史验证后清理干净本地分支/工作树；远程分支仍无受支持删除通道，未声称已删。
+- **恢复与范围：**根分支 `codex/owned-stripe-preparation` 负责HTTP/UI/runner/相关测试和文档；原写者 `contract_review` 在 `/tmp/jewelry-owned-stripe-preparation` 仅负责payment-start、0021及专门测试。设计审查指出真实规则CHECK与已有fixture executor边界，先做同一权威attempt/work的owned含税兼容、私有准备状态和库存保护；没有provider派发或paid/allocated，不新建账本。最终实现还需独立代码审查，设计意见不冒充批准。实际模型配置不可读取。
+- **用量恢复：**核心实现保存在原工作树时触发用量限制；23:13 UTC已超过回执18:54多伦多恢复时点且ordinaryUsageAllowed=true，正常恢复同一代理剩余测试/收尾。未重生成、消费reset credit或购买服务；根未提交改动完整保留。
+- **迁移可行性小证明：**一次独立Node/getPlatformProxy试验挂起，终止前核对其专用PID，未当作通过。随后在独立临时目录以正常Wrangler migrations CLI验证defer/备份/DROP/同名CREATE/恢复保留RESTRICT父子各1条、外键检查为空；这不代替实际金融依赖升级/失败回滚测试。完整证据待核心测试实际完成。
+- **账户现状：**用户截图显示Stripe Sandbox/Test mode与PayPal CA Business/Personal测试账户界面可用。没有读取/保存秘密或操作账户，也未核实API认证/Webhook/实际付款。不重复要求注册，待安全本机配置与实际调用授权。
+- **根阶段检查：**默认关闭部署与Worker-first不重叠配置5项通过，根增量范围lint和diff检查通过；其余UI/HTTP/核心D1、生成类型、全套/构建、编译浏览器及独立实现审查尚未完成，不提前记通过。
+
+- **实际实现与整合：**写者 `4003119550a61e32a68e567e69f975c752f90316` 仅改核心/0021/新测试，根整合为 `c9e26c4`；运行文件与源逐字节一致。新12项与旧47项共59项通过（11.78秒），含0020实际完整财务依赖升级不重锁/不重复work及失败完整回滚。根UI/HTTP/runner保存 `1f8fb7f`；首轮20项中跨域期望403而实际最外gate404，仅修正断言为 `5e914d1`，独立核对不弱化拒绝行为。
+- **整合验证：**完整format/lint/生成类型检查通过；修正断言后首次全套78文件1453项应用测试通过（103.75秒），6项支付HTTP模拟及生产构建/Admin资产保护通过，没有重复无变化的全套检查。
+- **完成的独立审查：**`customer_flow_review` 实际限定审查最终运行head `5e914d1b6a0c8db59b0c5b543bfc324021e1c572`，覆盖核心/迁移、HTTP/权限、页面、runner和测试，无未解决发现。核心blob `d04b65620c00deb54b45416d379da7e26042ff1c`、0021 `581353132446395948bcc32e74a39cfbc58e91ac`、新测试 `9c645637dc168dd50238b1e8052e9616c9d9efac`；审查者未运行测试，根结果不冒充其独立执行，实际模型配置不可读。之后只记录证据，不改运行逻辑。
+- **实际编译浏览器：**127.0.0.1:8793显式opt-in的全新临时D1/R2中走商品→1件购物车→交付页入口→固定Ontario虚构资料/邮寄→最终CAD44.00（25+15+4虚构税）→自己的未付款订单→准备→刷新恢复。状态显示无provider请求/无Session/未付款、取消和再次准备消失、车仍1件；390px实测scroll/client均390、一个main、刷新按钮44px，截图目视无溢出。最初在server ready前打开被拒，ready后新标签实际验收成功，不改浏览器安全策略。runner停止后临时目录 `jewelry-commerce-local-W3XX8I` 保留；未声称重启恢复、真Safari/VoiceOver/UAT或实际Sandbox验收。准确发布head CI/合并树/归档/main CI实际完成后另记。

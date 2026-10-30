@@ -1,6 +1,6 @@
 # 商城准备度审查与 C 路线设计
 
-**设计基线：2026-10-18；状态同步：2026-10-30。C方向已选，main `3333576`（#72准确head CI107、独立审查和main CI108通过）。本地固定合成资料的确认/私有未付款订单/取消与有界到期调用已合并。当前[Issue #73 Stripe适配](./COMMERCE_STRIPE_SANDBOX_ADAPTER.md)，仍无实际provider付款或真实资料保存；Safari/VoiceOver/UAT及完整营业未验收。** 历史调查按各节日期阅读，最新证据见[执行日志](./COMMERCE_EXECUTION_LOG.md)。
+**设计基线：2026-10-18；状态同步：2026-10-30。C方向已选，main `395dd1e`（#74准确head CI109、独立审查和main CI110通过）。** 本地确认/私有未付款订单/取消及Stripe无消费者适配已合并；当前[Issue #75订单支付准备](./COMMERCE_OWNED_PAYMENT_PREPARATION.md)接线中。测试账户截图不等于API认证或实际付款，仍无provider收款/真实资料保存验收；Safari/VoiceOver/UAT及完整营业未通过。历史调查按日期阅读，最新证据见[执行日志](./COMMERCE_EXECUTION_LOG.md)。
 
 业务事实和决定截止点以 [需求](./ONLINE_SALES_REQUIREMENTS.md) 为准；A/B 比较及冻结 V1 的关系见 [ADR-001](./ADR_001_COMMERCE_ROUTE_C.md)；任务执行顺序唯一入口为 [实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md)。没有先试用 Shopify 的执行门槛。2026-10-18 用户进一步缩小首版：只售现货、缺货不可购买；Facebook 先隔离留量，完整手工订单后续再做。此前缺货接单模型从首版移出。
 

@@ -1,6 +1,6 @@
 # 从当前本地商城基础到正式开售：剩余工作路线图
 
-核对日期：2026-10-30。基线main `3333576`（#72准确head CI107、独立审查和main CI108通过）。本地固定合成资料的确认→私有未付款订单/查询/取消和有界到期调用已合并。当前[Issue #73 Stripe Sandbox适配](./COMMERCE_STRIPE_SANDBOX_ADAPTER.md)，随后共享订单接线与真实Sandbox，再PayPal。实际支付、经营和上线门槛不变。
+核对日期：2026-10-30。基线main `395dd1e`（#74准确head CI109、独立审查和main CI110通过）。本地下单和无消费者Stripe适配已合并，当前[Issue #75订单支付准备](./COMMERCE_OWNED_PAYMENT_PREPARATION.md)接线中；随后Session/返回/核查/收款库存接线与实际Sandbox，再PayPal。用户测试账户界面可用，API认证/真实支付、经营和上线仍未验收。
 
 本路线图是**当前剩余工作的执行顺序入口**；[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 的 C01–C20 保留完整范围，[准备度审查](./COMMERCE_READINESS_REVIEW.md) 的 T01–T22 保留验收定义，[需求](./ONLINE_SALES_REQUIREMENTS.md) 保留经营决定。下文 Lxx 是待拆分的工作编号，不冒充已创建的 GitHub Issue 或完成状态。
 
@@ -138,10 +138,10 @@ L10–L12可先用虚构SKU完成；真实商品、材质/照片授权、包装/
 
 ## 12. 紧接着该做什么
 
-2026-10-30已完成可见本地下单链路（Issue #71 / PR #72），main CI108成功。此前内部模型拆片过细；不继续扩外围helper，保留既有成果和关键安全约束，接下来按支付核心推进：
+2026-10-30已合并#72本地下单与#74 Stripe适配，main `395dd1e`、main CI110通过。保留关键金额/库存/权限/重复扣款测试，按可见支付链路推进，不继续扩外围helper：
 
-1. **当前Issue #73：Stripe托管Sandbox适配。** 同一模块准备创建/读取/关闭Session及原始Webhook验签，固定版本、测试账户、原金额/关联和幂等参数；无消费者、无默认fetch/凭据，当前只做必要离线HTTP/签名测试。不是实际Sandbox通过，也不新增支付账本。详见[适配边界](./COMMERCE_STRIPE_SANDBOX_ADAPTER.md)。
-2. **紧接共享订单与可见支付接线。** 受审查服务端订单发起付款、固定回跳/私有状态、查询/验签事件核对及收款后的库存分配；必要旧零税/fixture来源兼容与迁移随该功能整合。现有10分钟预留不能直接充当Stripe最短30分钟Session期限；未明付款继续保护库存并可恢复，回跳不写paid。没有凭据时外部调用关闭，取得经营者安全配置与对应授权后完成真实Sandbox收款→本站订单/库存证据。
-3. **PayPal及跨渠道异常。** 共用订单权威，分别处理批准/capture、查询和未知结果；随后补齐经营后台、退款、通知/对账及上线验收，不等全部运营工具做完才开始付款。真实Google/PII生命周期、业务规则、Safari/VoiceOver/UAT和正式授权门槛保留。
+1. **当前Issue #75：自己的订单与支付准备接线。** 复用权威attempt/work和服务端含税冻结报价，以0021前向迁移兼容owned来源，单独默认关闭开关接入私有页面。原键恢复，异步读取后重验会话/新鲜时间，attempt保护库存；旧fixture executor拒绝owned来源。实现/测试/独立审查及PR证据未完成前不标记通过。详见[范围与停止办法](./COMMERCE_OWNED_PAYMENT_PREPARATION.md)。没有provider请求或paid/allocated。
+2. **随后Stripe Session纵向接线。** 在现有权威attempt上持久关联原始Session参数、dispatch/unknown/query结果，接托管跳转/返回/私有状态、验签事件和canonical收款核对，再原子分配库存；不新增平行支付账本。最短30分钟Session不能套十分钟预留，派发前保护可能收款的库存，未知不重建尝试，回跳不写paid。使用默认关闭的安全本机配置；用户截图确认测试账户界面可用，但凭据认证/实际Sandbox收款→本站订单/库存仍需单独授权与实际证据。
+3. **PayPal及跨渠道异常。** 共用订单权威，分别处理批准/capture、查询和未知结果；随后补齐经营后台、退款、通知/对账及上线验收。真实Google/PII生命周期、经营规则、Safari/VoiceOver/UAT和正式授权门槛保留。
 
 每PR只做一个聚焦功能，准确head CI/完成的独立审查无未解决项后才代合并；核对合并树、先归档后清理、更新main并等主线CI后下一分支。测试按风险选取，不反复全仓审查或重跑无变化且已通过的检查。
