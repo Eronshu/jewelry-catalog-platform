@@ -45,6 +45,11 @@ const rules = Object.freeze({
   rounding: "half-up-items-and-delivery",
   methods: Object.freeze({ pickup: 0, local_delivery: 500, shipping: 1500 }),
 });
+/** Fresh copy of the fixed local policy witness, never a mutable shared registry. */
+export function testCheckoutRulesWitness() {
+  return structuredClone(rules);
+}
+
 const profiles = Object.freeze({
   "fixture-ontario": Object.freeze({
     name: "Fictional Ontario Customer",

@@ -764,8 +764,11 @@ describe("Worker → React Router reservation-review authorization", () => {
       expect(body).toContain(order.id);
       expect(queries).toHaveLength(1);
       expect(queries[0]).toMatch(/^SELECT /);
-      expect(queries[0]).not.toMatch(
-        /snapshot|owner_hash|email|address|provider/,
+      // Source checks may inspect snapshot metadata in WHERE; the SELECT must
+      // still return only the minimal header, never a snapshot or wildcard.
+      const projection = queries[0].split(/\bFROM\b/i)[0];
+      expect(projection).not.toMatch(
+        /\*|snapshot|owner_hash|email|address|provider/,
       );
     },
   );

@@ -1,3 +1,4 @@
+import { legacyLabSource } from "./legacy-lab-source.server";
 import { commandHash } from "./inventory.server";
 
 export class PaymentStartError extends Error {
@@ -203,7 +204,7 @@ function current(
        q.owner_hash AS quoteOwner, q.expires_at AS quoteExpiresAt, q.created_at AS quoteCreatedAt,
        o.created_at AS createdAt, o.state, o.payment_state AS paymentState, o.fulfillment,
        o.reserve_until AS reserveUntil, o.version FROM commerce_orders o
-       JOIN commerce_quotes q ON q.id = o.quote_id WHERE o.id = ? AND o.owner_hash = ?`,
+       JOIN commerce_quotes q ON q.id = o.quote_id WHERE ${legacyLabSource("order")} AND ${legacyLabSource("quote")} AND o.id = ? AND o.owner_hash = ?`,
     )
     .bind(id, trusted.ownerHash)
     .first<Current>();
@@ -355,7 +356,7 @@ export async function beginTestPaymentAttempt(
            mode, instance_id, provider, account_ref, amount_cents, currency, rules_version,
            snapshot_hash, expected_version, occurred_at, create_operation_key)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CAD', 'local-test-v1',
-           (SELECT CASE WHEN snapshot = ? THEN ? END FROM commerce_orders WHERE id = ? AND owner_hash = ?), ?, ?, ?)`,
+           (SELECT CASE WHEN snapshot = ? THEN ? END FROM commerce_orders WHERE ${legacyLabSource()} AND id = ? AND owner_hash = ?), ?, ?, ?)`,
           )
           .bind(
             commandId,

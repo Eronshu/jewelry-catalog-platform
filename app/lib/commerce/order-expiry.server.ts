@@ -1,3 +1,4 @@
+import { legacyLabSource } from "./legacy-lab-source.server";
 import { OrderError, releaseTestOrder } from "./orders.server";
 
 // Internal batch primitive only. Callers must supply an isolated local D1;
@@ -67,7 +68,7 @@ export async function expireTestOrderBatch(
       .prepare(
         `SELECT id, owner_hash AS owner, reserve_until AS reserveUntil
          FROM commerce_orders
-         WHERE state = 'pending_payment' AND payment_state = 'not_started'
+         WHERE ${legacyLabSource()} AND state = 'pending_payment' AND payment_state = 'not_started'
            AND fulfillment = 'none' AND reserve_until <= ?
            AND (reserve_until, id) > (?, ?)
          ORDER BY reserve_until, id LIMIT ?`,
@@ -94,7 +95,7 @@ export async function expireTestOrderBatch(
           .prepare(
             `SELECT state, payment_state AS paymentState, fulfillment,
              reserve_until AS reserveUntil FROM commerce_orders
-             WHERE id = ? AND owner_hash = ?`,
+             WHERE ${legacyLabSource()} AND id = ? AND owner_hash = ?`,
           )
           .bind(candidate.id, candidate.owner)
           .first<{

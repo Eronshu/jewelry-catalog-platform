@@ -1,3 +1,4 @@
+import { legacyLabSource } from "./legacy-lab-source.server";
 /** Internal local fixture diagnostics. This context is not authentication. */
 export type TestPaymentAttentionContext = {
   mode: "local-test";
@@ -246,6 +247,7 @@ export async function listTestPaymentAttention(
           FROM commerce_orders o
           JOIN (SELECT DISTINCT order_id FROM attempts) a ON a.order_id=o.id
           LEFT JOIN facts f ON f.order_id=o.id LEFT JOIN observations b ON b.order_id=o.id
+          WHERE ${legacyLabSource("order")}
         )
         SELECT * FROM attention
         WHERE (unprocessedObservationCount>0 OR captureConflictCount>0 OR mismatchedFactCount>0
