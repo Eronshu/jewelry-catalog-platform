@@ -72,7 +72,7 @@ export function ShoppingNavigation() {
       className="container shopping-preview-nav"
       aria-label="Local shopping preview"
     >
-      <p>Local preview · Fictional products · No orders or payment</p>
+      <p>Local preview · Fictional products · No real purchases or payment</p>
       <Link to="/cart">
         View cart ({cart.lines.reduce((sum, line) => sum + line.quantity, 0)})
       </Link>

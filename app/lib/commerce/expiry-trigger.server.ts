@@ -1,3 +1,8 @@
+import {
+  checkoutConfig,
+  checkoutExpiryConfigured,
+} from "./checkout-config.server";
+import { expireOwnedCheckoutBatch } from "./checkout-expiry.server";
 import { isLocalCommerceEnabled } from "./environment.server";
 import { expireTestOrderBatch } from "./order-expiry.server";
 import { OrderError } from "./orders.server";
@@ -44,7 +49,10 @@ export async function handleLocalExpiry(
       headers,
     });
 
-  let input: { after?: { reserveUntil: number; orderId: string } };
+  let input: {
+    after?: { reserveUntil: number; orderId: string };
+    ownedAfter?: { reserveUntil: number; orderId: string };
+  };
   try {
     const reader = request.body?.getReader();
     if (!reader) throw new Error();
@@ -75,14 +83,40 @@ export async function handleLocalExpiry(
       !input ||
       typeof input !== "object" ||
       Array.isArray(input) ||
-      Object.keys(input).some((key) => key !== "after") ||
+      Object.keys(input).some(
+        (key) => key !== "after" && key !== "ownedAfter",
+      ) ||
       (Object.hasOwn(input, "after") &&
         (!input.after ||
           typeof input.after !== "object" ||
           Array.isArray(input.after) ||
           Object.keys(input.after).some(
             (key) => key !== "reserveUntil" && key !== "orderId",
+          ))) ||
+      (Object.hasOwn(input, "ownedAfter") &&
+        (!input.ownedAfter ||
+          typeof input.ownedAfter !== "object" ||
+          Array.isArray(input.ownedAfter) ||
+          Object.keys(input.ownedAfter).some(
+            (key) => key !== "reserveUntil" && key !== "orderId",
           )))
+    )
+      throw new Error();
+    // Validate both cursors before either scan can perform a release.
+    for (const cursor of [input.after, input.ownedAfter]) {
+      if (
+        cursor &&
+        (!Number.isSafeInteger(cursor.reserveUntil) ||
+          cursor.reserveUntil < 0 ||
+          cursor.reserveUntil > Date.now() ||
+          typeof cursor.orderId !== "string" ||
+          !/^order-[a-f0-9-]{36}$/.test(cursor.orderId))
+      )
+        throw new Error();
+    }
+    if (
+      input.ownedAfter !== undefined &&
+      !checkoutExpiryConfigured(request, env)
     )
       throw new Error();
   } catch {
@@ -97,6 +131,15 @@ export async function handleLocalExpiry(
       after: input.after,
       signal: request.signal,
     });
+    if (checkoutExpiryConfigured(request, env)) {
+      const owned = await expireOwnedCheckoutBatch(
+        env.DB,
+        checkoutConfig(request, env),
+        { after: input.ownedAfter, signal: request.signal },
+      );
+      return Response.json({ ...result, owned }, { headers });
+    }
+    if (input.ownedAfter !== undefined) throw new OrderError("invalid_request");
     return Response.json(result, { headers });
   } catch (error) {
     return new Response(

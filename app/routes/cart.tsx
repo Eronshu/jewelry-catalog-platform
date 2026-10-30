@@ -116,8 +116,8 @@ export default function ShoppingCart() {
           Your cart
         </h1>
         <p>
-          Local shopping preview with fictional products. No orders or payments
-          can be placed.
+          Local shopping preview with fictional products. No real purchases or
+          payments can be placed.
         </p>
       </header>
       <p ref={status} role="status" />

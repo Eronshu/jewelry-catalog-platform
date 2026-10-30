@@ -32,3 +32,5 @@ HTTP本地Cookie无Secure，使用SameSite=Lax、Path=/和测试用固定24小�
 真实临时D1测试覆盖含旧0019订单/预留的增量升级、随机签发/复用、scope/origin/mode拒绝、重复/畸形Cookie、缺CSRF/错误方法、到期等号/回拨/延迟读、撤销/重放/竞争、不可变和REPLACE/UPSERT绕过、写丢响应/读取失败及无敏感错误。HTTP未激活必须由未改路由/runner/config的范围核对支持。
 
 格式/lint/生成typecheck/全套应用测试、6项HTTP模拟、生产构建及独立安全审查完成，准确head CI无未解决项才代合并。实际结果另记[日志](./COMMERCE_EXECUTION_LOG.md)；单元/D1模拟不代表真实Safari、Google留存、商家Sandbox或UAT通过。回退停止新消费者并保留hash/撤销及业务历史，不降级迁移、不复活会话、不重绑定订单；真实隐私保留/清理规则仍需单独确认。
+
+收口与消费者：#70 head `f946141` CI105和独立审查通过后合并main `bbff613`，main CI106成功；源全历史bundle验证后清理本地分支/工作树。Issue #71在后续受审消费者中增加只读GET resolve-only和显式fixture确认/状态，不把本片内部函数直接当已完成的网页。

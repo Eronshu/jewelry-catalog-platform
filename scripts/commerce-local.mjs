@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { readPlacesTestSettings } from "./commerce-places-config.mjs";
 import { createLocalExpiryDriver } from "./commerce-expiry-driver.mjs";
@@ -21,9 +21,10 @@ const places = readPlacesTestSettings(process.env);
 const expiryMode = process.env.COMMERCE_EXPIRY_MODE;
 if (expiryMode !== undefined && expiryMode !== "local-test")
   throw new Error(
-    "COMMERCE_EXPIRY_MODE only accepts local-test; omit to disable.",
+    "COMMERCE_EXPIRY_MODE only accepts local-test; expiry is enabled by default.",
   );
-const expiryToken = expiryMode ? randomBytes(32).toString("hex") : undefined;
+const expiryToken = randomBytes(32).toString("hex");
+const checkoutInstance = randomUUID();
 const privateSettings = {
   ...places,
   ...(expiryToken ? { COMMERCE_LOCAL_EXPIRY_TOKEN: expiryToken } : {}),
@@ -54,8 +55,7 @@ writeFileSync(
           "/cart.data",
           "/checkout",
           "/checkout.data",
-          "/checkout/quote",
-          "/checkout/quote.data",
+          "/checkout/*",
           "/commerce-lab",
           "/commerce-lab.data",
           "/_local/commerce/expiry",
@@ -64,7 +64,13 @@ writeFileSync(
           "/admin/*",
         ],
       },
-      vars: { COMMERCE_MODE: "local-test" },
+      vars: {
+        COMMERCE_MODE: "local-test",
+        COMMERCE_CHECKOUT_INSTANCE_ID: checkoutInstance,
+        COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
+        COMMERCE_CHECKOUT_EXPIRY: "local-test",
+        COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
+      },
       d1_databases: [
         {
           binding: "DB",
@@ -201,7 +207,7 @@ expiry?.start();
 console.log(
   expiry
     ? "Local expiry enabled: bounded batches every 30s after readiness; see terminal health."
-    : "Local expiry off (opt in with COMMERCE_EXPIRY_MODE=local-test).",
+    : "Local expiry unavailable; do not create reservations.",
 );
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () => {

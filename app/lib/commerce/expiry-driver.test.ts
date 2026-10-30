@@ -72,6 +72,34 @@ describe("bounded local expiry driver", () => {
     );
     driver.stop();
   });
+  it("continues the independent owned cursor without changing legacy cursor behavior", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(ready())
+      .mockResolvedValueOnce(
+        Response.json({
+          outcomes: [],
+          nextCursor: null,
+          stopped: false,
+          owned: { outcomes: [], nextCursor: cursor, stopped: false },
+        }),
+      )
+      .mockResolvedValue(page());
+    const driver = createLocalExpiryDriver({
+      origin,
+      token,
+      fetcher,
+      report: vi.fn(),
+    });
+    driver.start();
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(EXPIRY_INTERVAL_MS);
+    expect(JSON.parse(fetcher.mock.calls[2][1]!.body as string)).toEqual({
+      ownedAfter: cursor,
+    });
+    driver.stop();
+  });
   it("does not overlap slow requests or schedule after stop/late completion", async () => {
     vi.useFakeTimers();
     let resolve!: (value: Response) => void;

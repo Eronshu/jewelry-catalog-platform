@@ -8,9 +8,14 @@ const generated = JSON.parse(
 const patterns = generated.assets?.run_worker_first;
 if (
   !Array.isArray(patterns) ||
-  !["/admin", "/admin.data", "/admin/*"].every((path) =>
-    patterns.includes(path),
-  )
+  ![
+    "/admin",
+    "/admin.data",
+    "/admin/*",
+    "/checkout",
+    "/checkout.data",
+    "/checkout/*",
+  ].every((path) => patterns.includes(path))
 ) {
   throw new Error(
     "Generated Static Assets config omits an Admin Worker-first path.",
@@ -28,7 +33,10 @@ function isAdminPath(pathname) {
   return (
     normalized === "/admin" ||
     normalized === "/admin.data" ||
-    normalized.startsWith("/admin/")
+    normalized.startsWith("/admin/") ||
+    normalized === "/checkout" ||
+    normalized === "/checkout.data" ||
+    normalized.startsWith("/checkout/")
   );
 }
 
