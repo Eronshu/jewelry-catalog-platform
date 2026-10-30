@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-10-30: #72's owned unpaid order flow and #74's Stripe Sandbox adapter are merged at main `395dd1e`; exact-head CI109, independent review and main CI110 passed for #74. Issue #75 connects owned orders to the existing payment preparation record and private status, with a separate default-off local switch. It sends no provider request. Actual Sandbox authentication/payment, Safari/UAT, arbitrary customer data and business readiness remain unverified.
+Status checked 2026-10-30: #76 owned payment preparation is merged at main `a84ae05`; exact-head CI111, independent review and main CI112 passed. Current Issue #77 adds the protected owner workspace with owned orders and stock views. It is read only and local only. No provider request/hosted Session or paid order flow exists yet. Actual Sandbox, arbitrary customer data, Safari/UAT and business readiness remain separate gates.
 
 ## Availability policy
 
@@ -129,3 +129,19 @@ Preparation fixes the server's accepted CAD amount/rules and moves payment state
 Stop new preparation by removing the opt-in or server preparation flag, while retaining local mode, the original database and owned session for existing private reads. The standard runner creates a new temporary database on every invocation; restarting it is **not** restoration of the old test session/database. Never delete payment/order history, force stock release or undo migration0021 as a rollback. Preserve the printed old directory and use a reviewed forward repair if needed. Full contract and remaining payment work: [owned preparation](./COMMERCE_OWNED_PAYMENT_PREPARATION.md).
 
 User-provided screenshots show Stripe Sandbox/Test mode and PayPal CA Business/Personal Sandbox accounts are available. They do not verify local credentials, API authentication, webhook delivery or an end-to-end paid order. Use secure local configuration only once that integration is ready; never send secrets in chat or commit them.
+
+## Owner commerce workspace (Issue #77)
+
+The new protected routes are `/admin/commerce`, `/admin/commerce/orders`, `/admin/commerce/orders/:orderId` and `/admin/commerce/inventory`. The local Admin welcome/navigation links to them. They require the existing approved Admin principal and the runner's current HTTP127.0.0.1 checkout configuration **before** storage access. The standard runner still provides no Admin login or authentication bypass.
+
+Order views list all customers' owned test orders in this configured checkout instance, including new orders/preparations from the customer flow; legacy lab orders and other instances are excluded. Details use saved item names/SKUs/colours/sizes, quantities and CAD amounts, not today's product text/price. Only these minimal fields are selected; no raw snapshots, profile/contact data, owner/session hashes or internal payment keys are returned. GET filters and cursors are bounded; changing filters starts a new page. Inventory covers the shared fictional catalog in the isolated database, including unpublished/disabled variants, with separate physical/FB/checkout/allocated quantities; unpublished or disabled variants have zero website availability.
+
+These are read-only views. They do not receive stock, release a prepared order, refund, take payment or ship goods. Stop/revert the new routes/navigation without changing any order/stock history. Existing legacy review/recovery is separate and unchanged.
+
+For visual review without an Admin account:
+
+```sh
+npm run admin:shell:preview
+```
+
+Open `/admin/commerce` at its printed loopback URL. Its Overview/Orders/Order detail/Inventory and empty scenes use clearly marked in-memory fixtures. This preview demonstrates the actual shared components, not authentication, D1 or business actions. Runtime verification separately uses real temporary D1 customer-created orders plus synthetic signed-JWT Worker/React Router boundary tests. Browser screenshots are not authenticated-runtime, real iPhone Safari or owner UAT evidence.

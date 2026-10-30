@@ -24,6 +24,8 @@ import { handleWorkerRequest } from "../../workers/app";
 import * as ReviewRoute from "./admin-commerce-review";
 import * as ScreenRoute from "./admin-commerce-reservations";
 import * as RecoverRoute from "./admin-commerce-recover";
+import * as WorkspaceRoute from "./admin-commerce";
+import * as WorkspaceOrdersRoute from "./admin-commerce-orders";
 import handleDocument from "../entry.server";
 import { applyStockCommand } from "../lib/commerce/inventory.server";
 import {
@@ -64,13 +66,42 @@ const recovery = {
   path: "admin/commerce/reservations/recover",
   module: RecoverRoute,
 };
+const workspace = {
+  id: "routes/admin-commerce",
+  path: "admin/commerce",
+  module: WorkspaceRoute,
+};
+const workspaceOrders = {
+  id: "routes/admin-commerce-orders",
+  path: "admin/commerce/orders",
+  module: WorkspaceOrdersRoute,
+};
 const handler = createRequestHandler(
   {
     entry: { module: { default: handleDocument } },
-    routes: { [route.id]: route, [screen.id]: screen, [recovery.id]: recovery },
+    routes: {
+      [route.id]: route,
+      [screen.id]: screen,
+      [recovery.id]: recovery,
+      [workspace.id]: workspace,
+      [workspaceOrders.id]: workspaceOrders,
+    },
     assets: {
       entry: { imports: [], module: "/entry.js" },
       routes: {
+        ...Object.fromEntries(
+          [workspace, workspaceOrders].map((item) => [
+            item.id,
+            {
+              id: item.id,
+              path: item.path,
+              module: `/${item.id}.js`,
+              hasLoader: true,
+              hasAction: true,
+              hasErrorBoundary: true,
+            },
+          ]),
+        ),
         [recovery.id]: {
           id: recovery.id,
           path: recovery.path,
@@ -394,6 +425,8 @@ function env(db: object, enabled = true) {
     ADMIN_ACCESS_ISSUER: issuer,
     ADMIN_ACCESS_AUD: audience,
     ADMIN_IDENTITY_PAIRS: JSON.stringify([human]),
+    COMMERCE_CHECKOUT_INSTANCE_ID: "11111111-1111-4111-8111-111111111111",
+    COMMERCE_CHECKOUT_ORIGIN: origin,
   } as unknown as Env;
 }
 async function throughWorker(
@@ -418,6 +451,10 @@ async function throughWorker(
 }
 describe("Worker → React Router reservation-review authorization", () => {
   it.each([
+    "/admin/commerce",
+    "/admin/commerce/orders",
+    "/admin/commerce/orders/order-11111111-1111-4111-8111-111111111111.data",
+    "/admin/commerce/inventory",
     "/admin/commerce/reservations",
     "/admin/commerce/review.data",
     "/admin/commerce/reservations/recover",
@@ -451,6 +488,56 @@ describe("Worker → React Router reservation-review authorization", () => {
       expect(batch).not.toHaveBeenCalled();
     },
   );
+  it("routes the new workspace through approved human auth, local gating and GET-only private data", async () => {
+    const prepare = vi.fn(() => ({ bind: () => ({}) }));
+    const batch = vi.fn(async () => [
+      { results: [{ pendingCount: 1, preparedCount: 0, cancelledCount: 0 }] },
+      {
+        results: [
+          {
+            variantCount: 1,
+            availableUnits: 4,
+            facebookUnits: 1,
+            reservedUnits: 0,
+            allocatedUnits: 0,
+          },
+        ],
+      },
+      { results: [] },
+    ]);
+    const db = { prepare, batch };
+    const assertion = await jwt();
+    for (const [token, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "not-approved" }), 403],
+      [await jwt({ service_token_id: "service" }), 401],
+    ] as const)
+      expect(
+        (await throughWorker(db, token, "GET", "/admin/commerce")).status,
+      ).toBe(status);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(
+      (await throughWorker(db, assertion, "GET", "/admin/commerce", false))
+        .status,
+    ).toBe(404);
+    const post = await throughWorker(db, assertion, "POST", "/admin/commerce");
+    expect(post.status).toBe(405);
+    expect(post.headers.get("Allow")).toBe("GET");
+    expect(prepare).not.toHaveBeenCalled();
+    const response = await throughWorker(
+      db,
+      assertion,
+      "GET",
+      "/admin/commerce",
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+    const html = await response.text();
+    expect(html).toContain("Commerce workspace");
+    expect(html).not.toContain(human.email);
+    expect(batch).toHaveBeenCalledTimes(1);
+  });
   it("rejects an otherwise valid human JWT from another environment's Access application before routing", async () => {
     const prepare = vi.fn();
     const batch = vi.fn();
