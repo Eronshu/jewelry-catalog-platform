@@ -22,11 +22,23 @@ export function AdminShell({
           <Link className="admin-label" to="/admin">
             Catalog admin
           </Link>
-          <nav aria-label="Admin navigation" className="admin-nav">
+          <nav
+            aria-label="Admin navigation"
+            className={
+              localReservations
+                ? "admin-nav admin-commerce-navigation"
+                : "admin-nav"
+            }
+          >
             <Link to="/admin/products">Products</Link>
             <Link to="/admin/products/new">Add product</Link>
             {localReservations && (
-              <Link to="/admin/commerce/reservations">Test reservations</Link>
+              <>
+                <Link to="/admin/commerce">Commerce</Link>
+                <Link to="/admin/commerce/orders">Orders</Link>
+                <Link to="/admin/commerce/inventory">Inventory</Link>
+                <Link to="/admin/commerce/reservations">Test reservations</Link>
+              </>
             )}
           </nav>
           <Link className="admin-back-link" to="/">
@@ -59,12 +71,18 @@ export function AdminWelcome({
           <Link to="/admin/products">View products</Link>
         </p>
         {localReservations && (
-          <p>
-            <Link to="/admin/commerce/reservations">
-              Review test reservations
-            </Link>{" "}
-            · Local test only
-          </p>
+          <div>
+            <p>
+              <Link to="/admin/commerce">Open commerce workspace</Link> · Local
+              test only
+            </p>
+            <p>
+              <Link to="/admin/commerce/reservations">
+                Review test reservations
+              </Link>{" "}
+              · Local test only
+            </p>
+          </div>
         )}
       </section>
     </AdminShell>

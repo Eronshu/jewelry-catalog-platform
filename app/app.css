@@ -2657,3 +2657,238 @@ a {
     gap: 3rem;
   }
 }
+
+/* Read-only local commerce workspace. Scoped to avoid changing catalog/admin forms. */
+.admin-commerce-navigation {
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.admin-commerce-navigation a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+.commerce-workspace {
+  max-width: 72rem;
+  color: #252321;
+}
+.commerce-workspace h2 {
+  font-size: 1.2rem;
+  line-height: 1.4;
+}
+.commerce-workspace h3 {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.commerce-workspace p {
+  line-height: 1.6;
+}
+.commerce-workspace-nav {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #d8d5cf;
+  padding-bottom: 0.5rem;
+}
+.commerce-workspace-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  border-radius: 3px;
+}
+.commerce-workspace-nav a[aria-current="page"] {
+  background: #681c29;
+  color: #fff;
+}
+.commerce-workspace a:focus-visible,
+.commerce-workspace button:focus-visible,
+.commerce-workspace input:focus-visible,
+.commerce-workspace select:focus-visible {
+  outline: 3px solid #681c29;
+  outline-offset: 3px;
+}
+.commerce-workspace-muted {
+  color: #57514c;
+  font-size: 0.9rem;
+}
+.commerce-workspace-card {
+  min-width: 0;
+  border: 1px solid #d8d5cf;
+  border-radius: 4px;
+  background: #fff;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+.commerce-workspace-card p {
+  margin: 0.5rem 0;
+}
+.commerce-workspace-card-heading,
+.commerce-workspace-section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.commerce-workspace-card-heading h2,
+.commerce-workspace-card-heading h3 {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 16rem;
+  overflow-wrap: anywhere;
+}
+.commerce-workspace-card-heading > strong {
+  white-space: nowrap;
+}
+.commerce-workspace-reference {
+  overflow-wrap: anywhere;
+}
+.commerce-workspace-list {
+  display: grid;
+  gap: 0.8rem;
+}
+.commerce-workspace-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 1rem;
+  margin-block: 1rem;
+}
+.commerce-workspace-facts dt {
+  color: #57514c;
+  font-size: 0.85rem;
+}
+.commerce-workspace-facts dd {
+  margin: 0.25rem 0 0;
+  line-height: 1.5;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.commerce-workspace-notice {
+  background: #fff5e6;
+  border-left: 3px solid #9a5f13;
+  padding: 0.7rem 1rem;
+  color: #553e1b;
+}
+.commerce-workspace-filters {
+  padding: 1rem;
+  background: #eeeae3;
+  border-radius: 4px;
+}
+.commerce-workspace-filters label {
+  flex: 1 1 15rem;
+  min-width: 0;
+}
+.commerce-workspace-filters input,
+.commerce-workspace-filters select {
+  width: 100%;
+  min-width: 0;
+}
+.commerce-workspace-filters > a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+}
+.commerce-workspace-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+.commerce-workspace-pagination > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+.commerce-workspace-pagination > span {
+  color: #57514c;
+}
+.commerce-workspace-lines {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+.commerce-workspace-totals {
+  max-width: 26rem;
+  margin: 1.5rem 0 2rem auto;
+  padding: 1rem;
+  border: 1px solid #d8d5cf;
+  background: #fff;
+}
+.commerce-workspace-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 0.5rem;
+}
+.commerce-workspace-totals dd {
+  margin: 0;
+  white-space: nowrap;
+}
+.commerce-workspace-total {
+  margin-top: 0.4rem;
+  border-top: 1px solid #d8d5cf;
+  font-weight: 700;
+}
+.commerce-workspace-stock-status {
+  font-weight: 650;
+}
+.commerce-workspace-stock-counts dd {
+  font-size: 1.35rem;
+}
+.commerce-workspace-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.8rem;
+}
+.commerce-workspace-metrics a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.25rem;
+  border: 1px solid #d8d5cf;
+  background: #fff;
+  text-decoration: none;
+}
+.commerce-workspace-metrics strong {
+  font-size: 2.15rem;
+  line-height: 1.1;
+  color: #681c29;
+}
+.commerce-workspace-metrics span {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.commerce-workspace section + section {
+  margin-top: 1.75rem;
+}
+.commerce-workspace-preview {
+  border: 2px dashed #9a5f13;
+  padding: 1rem;
+  margin: 1rem;
+  background: #fff5e6;
+}
+.commerce-workspace-preview nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+.commerce-workspace-preview a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+@media (max-width: 40rem) {
+  .commerce-workspace-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .commerce-workspace-filters label {
+    flex-basis: 100%;
+  }
+  .commerce-workspace-section-heading {
+    align-items: start;
+  }
+}

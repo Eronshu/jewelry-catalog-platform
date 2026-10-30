@@ -22,6 +22,9 @@ import {
 import { handleLocalExpiry } from "./expiry-trigger.server";
 import { applyStockCommand } from "./inventory.server";
 import { expireOwnedCheckoutBatch } from "./checkout-expiry.server";
+import { loadCommerceWorkspace } from "./workspace.server";
+import { adminPrincipalContext } from "../auth/admin-access.server";
+import { createTestQuote, reserveTestOrder } from "./orders.server";
 const root = resolve(process.cwd()),
   origin = "http://127.0.0.1:8791",
   instance = "11111111-1111-4111-8111-111111111111",
@@ -167,6 +170,14 @@ function context(env = settings()) {
   value.set(cloudflareContext, { env, ctx: {} as ExecutionContext });
   return value;
 }
+function workspaceContext(env = settings()) {
+  const value = context(env);
+  value.set(adminPrincipalContext, {
+    email: "owner@example.invalid",
+    sub: "fictional-owner",
+  });
+  return value;
+}
 const commandRoutes = {
   commands: {
     id: "commands",
@@ -285,6 +296,351 @@ afterAll(async () => {
 });
 
 describe("visible customer order flow on real temporary D1", () => {
+  it("shows customer-created orders and frozen amounts in the owner workspace with matching stock and preparation state", async () => {
+    const client = await browser();
+    const variant = await fixture();
+    await applyStockCommand(
+      db,
+      crypto.randomUUID(),
+      [
+        {
+          variantId: variant,
+          kind: "fb_reserve",
+          quantity: 1,
+          reason: "Fictional Facebook stock",
+        },
+      ],
+      Date.now(),
+    );
+    const created = await create(client, variant);
+    const read = async (
+      page: "overview" | "orders" | "order" | "inventory",
+      suffix = "",
+      reference?: string,
+    ) =>
+      (
+        await loadCommerceWorkspace(
+          get(`/admin/commerce${suffix}`),
+          workspaceContext(),
+          page,
+          reference,
+        )
+      ).data;
+    const listed = await read("orders", `/orders?reference=${created.orderId}`);
+    expect(listed).toMatchObject({
+      kind: "orders",
+      items: [
+        {
+          reference: created.orderId,
+          totalCents: 4400,
+          taxCents: 400,
+          itemCount: 1,
+          hasPaymentAttempt: false,
+        },
+      ],
+    });
+    const before = await read(
+      "order",
+      `/orders/${created.orderId}`,
+      created.orderId,
+    );
+    expect(before).toMatchObject({
+      kind: "order",
+      lines: [
+        {
+          name: "Fictional necklace",
+          quantity: 1,
+          unitPriceCents: 2500,
+          lineTotalCents: 2500,
+        },
+      ],
+      order: { delivery: "shipping" },
+    });
+    expect(JSON.stringify(before)).not.toMatch(
+      /ownerHash|owner_hash|token_hash|create_operation_key|rules_hash|fixtureProfile|email|snapshot/,
+    );
+    await db
+      .prepare(
+        "UPDATE products SET name='Changed catalog name' WHERE id=(SELECT product_id FROM commerce_variants WHERE id=?)",
+      )
+      .bind(variant)
+      .run();
+    expect(
+      await read("order", `/orders/${created.orderId}`, created.orderId),
+    ).toMatchObject({ lines: [{ name: "Fictional necklace" }] });
+    const response = await prepareCheckoutPayment(
+      post(
+        `/checkout/orders/${created.orderId}/prepare-payment`,
+        client.cookie,
+        {
+          csrf: client.csrfToken,
+          requestId: crypto.randomUUID(),
+          expectedVersion: "1",
+        },
+      ),
+      settings(db, { COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test" }),
+      created.orderId,
+    );
+    expect(response.status).toBe(200);
+    expect(
+      await read("order", `/orders/${created.orderId}`, created.orderId),
+    ).toMatchObject({
+      order: {
+        hasPaymentAttempt: true,
+        paymentState: "processing",
+        orderState: "pending_payment",
+      },
+    });
+    expect(
+      await read("inventory", `/inventory?search=${variant}`),
+    ).toMatchObject({
+      kind: "inventory",
+      items: [
+        {
+          onHand: 30,
+          facebookReserved: 1,
+          checkoutReserved: 1,
+          allocated: 0,
+          websiteAvailable: 28,
+        },
+      ],
+    });
+    expect(await read("overview")).toMatchObject({
+      kind: "overview",
+      summary: { preparedCount: 1, pendingCount: 0 },
+      recentOrders: expect.any(Array),
+    });
+    const cancelled = await create(client, variant);
+    expect(
+      (
+        await cancelCheckoutOrder(
+          post(`/checkout/orders/${cancelled.orderId}/cancel`, client.cookie, {
+            csrf: client.csrfToken,
+            releaseKey: crypto.randomUUID(),
+            expectedVersion: "1",
+          }),
+          settings(),
+          cancelled.orderId,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      await read(
+        "orders",
+        `/orders?status=cancelled&reference=${cancelled.orderId}`,
+      ),
+    ).toMatchObject({
+      items: [{ reference: cancelled.orderId, orderState: "cancelled" }],
+    });
+  });
+  it("keeps owner workspace reads scoped, read-only and private before accessing storage", async () => {
+    const client = await browser(),
+      created = await create(client);
+    const inaccessible = new Proxy({} as D1Database, {
+      get() {
+        throw new Error("Storage must not be read");
+      },
+    });
+    await expect(
+      loadCommerceWorkspace(
+        get("/admin/commerce"),
+        context(settings(inaccessible)),
+        "overview",
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    await expect(
+      loadCommerceWorkspace(
+        get("/admin/commerce"),
+        workspaceContext(settings(inaccessible, { COMMERCE_MODE: "disabled" })),
+        "overview",
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      loadCommerceWorkspace(
+        post("/admin/commerce/orders", client.cookie, {}),
+        workspaceContext(settings(inaccessible)),
+        "orders",
+      ),
+    ).rejects.toMatchObject({ status: 405 });
+    const result = await loadCommerceWorkspace(
+      get("/admin/commerce/orders"),
+      workspaceContext(),
+      "orders",
+    );
+    expect(result.init?.headers).toMatchObject({
+      "Cache-Control": "private, no-store",
+      "X-Robots-Tag": "noindex, nofollow",
+    });
+    const foreign = workspaceContext(
+      settings(db, { COMMERCE_CHECKOUT_INSTANCE_ID: crypto.randomUUID() }),
+    );
+    expect(
+      (
+        await loadCommerceWorkspace(
+          get("/admin/commerce/orders"),
+          foreign,
+          "orders",
+        )
+      ).data,
+    ).toMatchObject({ items: [] });
+    await expect(
+      loadCommerceWorkspace(
+        get(`/admin/commerce/orders/${created.orderId}`),
+        foreign,
+        "order",
+        created.orderId,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    const faulty = new Proxy({} as D1Database, {
+      get() {
+        throw new Error("Sensitive internal details");
+      },
+    });
+    try {
+      await loadCommerceWorkspace(
+        get("/admin/commerce"),
+        workspaceContext(settings(faulty)),
+        "overview",
+      );
+      throw new Error("Expected unavailable");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Response);
+      expect((error as Response).status).toBe(503);
+      expect(await (error as Response).text()).not.toContain("Sensitive");
+    }
+  });
+  it("paginates owned orders with stable ties and excludes the legacy lab", async () => {
+    const client = await browser(),
+      variant = await fixture();
+    const legacyVariant = await fixture();
+    const legacyQuote = await createTestQuote(
+      db,
+      "d".repeat(64),
+      [{ variantId: legacyVariant, quantity: 1 }],
+      "pickup",
+    );
+    const legacy = await reserveTestOrder(db, "d".repeat(64), legacyQuote.id);
+    const now = Date.now(),
+      clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    const ids = [];
+    try {
+      for (let i = 0; i < 26; i++)
+        ids.push((await create(client, variant)).orderId);
+    } finally {
+      clock.mockRestore();
+    }
+    const first = (
+      await loadCommerceWorkspace(
+        get("/admin/commerce/orders?status=awaiting"),
+        workspaceContext(),
+        "orders",
+      )
+    ).data;
+    if (first.kind !== "orders") throw new Error("Expected orders");
+    expect(first.items).toHaveLength(25);
+    expect(first.nextCursor).not.toBeNull();
+    const second = (
+      await loadCommerceWorkspace(
+        get(`/admin/commerce/orders?status=awaiting&after=${first.nextCursor}`),
+        workspaceContext(),
+        "orders",
+      )
+    ).data;
+    if (second.kind !== "orders") throw new Error("Expected orders");
+    const refs = [...first.items, ...second.items].map((o) => o.reference);
+    expect(new Set(refs).size).toBe(refs.length);
+    expect(ids.every((id) => refs.includes(id))).toBe(true);
+    expect(refs).not.toContain(legacy.id);
+    await expect(
+      loadCommerceWorkspace(
+        get(`/admin/commerce/orders/${legacy.id}`),
+        workspaceContext(),
+        "order",
+        legacy.id,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      loadCommerceWorkspace(
+        get(
+          `/admin/commerce/orders?status=cancelled&after=${first.nextCursor}`,
+        ),
+        workspaceContext(),
+        "orders",
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    for (const query of [
+      "status=made-up",
+      "reference=bad",
+      "status=all&status=all",
+      "after=bad!",
+      "ownerHash=forged",
+    ])
+      await expect(
+        loadCommerceWorkspace(
+          get(`/admin/commerce/orders?${query}`),
+          workspaceContext(),
+          "orders",
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+    // Reuse the existing fixture harness without leaving this pagination batch
+    // ahead of the later bounded-expiry scenario's own orders.
+    for (const id of ids)
+      expect(
+        (
+          await cancelCheckoutOrder(
+            post(`/checkout/orders/${id}/cancel`, client.cookie, {
+              csrf: client.csrfToken,
+              releaseKey: crypto.randomUUID(),
+              expectedVersion: "1",
+            }),
+            settings(),
+            id,
+          )
+        ).status,
+      ).toBe(200);
+  }, 15000);
+  it("shows unavailable catalog stock honestly and treats inventory search wildcards literally", async () => {
+    const variant = await fixture();
+    await db
+      .prepare(
+        "UPDATE commerce_variants SET active=0,version=version+1 WHERE id=?",
+      )
+      .bind(variant)
+      .run();
+    const result = (
+      await loadCommerceWorkspace(
+        get(`/admin/commerce/inventory?status=unavailable&search=${variant}`),
+        workspaceContext(),
+        "inventory",
+      )
+    ).data;
+    expect(result).toMatchObject({
+      kind: "inventory",
+      items: [{ onHand: 30, websiteAvailable: 0, active: false }],
+    });
+    expect(
+      (
+        await loadCommerceWorkspace(
+          get("/admin/commerce/inventory?search=%25"),
+          workspaceContext(),
+          "inventory",
+        )
+      ).data,
+    ).toMatchObject({ items: [] });
+    for (const query of [
+      "status=bad",
+      "search=" + "x".repeat(81),
+      "after=%%%",
+      "search=a&search=b",
+    ])
+      await expect(
+        loadCommerceWorkspace(
+          get(`/admin/commerce/inventory?${query}`),
+          workspaceContext(),
+          "inventory",
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+  });
   it("runs route bootstrap → final quote → owned unpaid status → cancellation with private projections", async () => {
     const request = get();
     const response = await ConfirmationRoute.loader({
