@@ -1,6 +1,6 @@
 # 首饰商城：业务需求与待决事项
 
-**状态同步：2026-10-30 · C路线已确定；main `bbff613`（#70准确head CI105、独立审查和main CI106通过）。** 内部报价/预留/释放及专用本机游客凭据已合并；当前Issue #71把现有购物页面接到自己的虚构待付款订单、私有查询/取消及本机到期驱动。目标是可演示的下单链路，不是付款完成；Stripe/PayPal、真实环境和完整营业仍未验收。
+**状态同步：2026-10-30 · C路线已确定；main `3333576`（#72准确head CI107、独立审查和main CI108通过）。** 固定虚构资料的最终确认、自己的未付款订单、查询/取消及本机到期驱动已合并。当前[Issue #73 Stripe适配](./COMMERCE_STRIPE_SANDBOX_ADAPTER.md)默认无消费者、无凭据和外部调用；随后接共享订单与付款页面。Stripe/PayPal实际Sandbox、真实资料/环境及完整营业仍未验收。
 
 下文是业务要求/测试假设/营业门槛，不代表全部已实现。入口见 [路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md#4-当前基线与下一任务) 与 [执行记录](./COMMERCE_EXECUTION_LOG.md)。[关联/恢复契约](./COMMERCE_PROVIDER_EVENT_CONTRACT.md) 区分事件验真、对象归属、只读查询与收款，PayPal批准不等于capture；0016仍按同实例任意收件阻止两渠道CREATE。已合并的[报价接受边界](./COMMERCE_CHECKOUT_ACCEPTANCE.md)不变更此规则；接受本身不占库。已合并的[订单来源桥接](./COMMERCE_CHECKOUT_ORDER_RESERVATION.md)明确隔离lab并复用共享权威，只有完整事务成功才形成未付款预留；收据不代表paid或可履约。已合并的[未付款释放](./COMMERCE_CHECKOUT_OWNED_RELEASE.md)只处理尚无支付尝试的订单，未知/已付款状态不得释放。已合并的[游客凭据](./COMMERCE_CHECKOUT_GUEST_CAPABILITY.md)只针对受信本机虚构fixture，不将lab Cookie升级为正式授权；Cookie不按端口隔离。真实资料、经营/账户和支付门槛照旧，测试假设不是顾客承诺。
 

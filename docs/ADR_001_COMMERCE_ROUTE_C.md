@@ -47,4 +47,4 @@ V1 是目录站的历史规格，第 40 节“不含结账”等边界仍描述 
 
 若无法落实维护人、实际费用超出预算、库存/支付关键不变量不能通过测试、小姨无法独立完成 UAT，或账户/产品资格无法支持必需支付方式，则暂停进入下一门槛并重新比较缩减范围或 A/B。改变已选架构要另记决策并说明迁移代价；不得在任务列表中悄悄恢复“Shopify 优先”。
 
-初始 C01 设计和部分本地基础已完成，保存成果已按 [四组 PR 顺序](./COMMERCE_PR_SEQUENCE.md) 整合，用户在分支清理后授权 C09b1 交付校验/报价契约；C09b2 页面仍须等待该小任务合并，不能从注册账户或付款按钮开始。全部后续实现以 [需求](./ONLINE_SALES_REQUIREMENTS.md)、[审查](./COMMERCE_READINESS_REVIEW.md) 和 [任务顺序](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 为依据。
+执行状态更新：保存成果已按 [四组 PR 顺序](./COMMERCE_PR_SEQUENCE.md) 整合，后续交付报价、购物页面、库存/预留及本机会话逐项实现；2026-10-30 的 #72 已接通固定虚构资料的最终确认、私有未付款订单与取消，main CI108 通过。当前进入 Stripe 托管 Sandbox 适配与订单衔接，尚无实际服务商付款。历史 C09b 前置等待不再是当前行动指令；完整剩余范围以 [当前路线图](./COMMERCE_LAUNCH_ROADMAP.md)、[需求](./ONLINE_SALES_REQUIREMENTS.md) 和 [审查](./COMMERCE_READINESS_REVIEW.md) 为准。本更新不改变冻结 V1、架构选择或正式授权边界。
