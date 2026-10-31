@@ -1,6 +1,6 @@
 # Owned Stripe Sandbox checkout — Issue #79
 
-**Local implementation checked; exact-head PR/CI and merge gate pending.** This is an isolated local-test feature, not a live checkout or completed provider acceptance. It extends ADR-001 without changing frozen V1. The existing owned order, payment attempt/work, capture-fact table and stock ledger remain the authorities; provider Session associations and event receipts contain transport evidence, not a second payment balance.
+**Merged in PR #80: exact head CI115, independent review and main CI116 passed (`a3a7731`).** This is an isolated local-test feature, not a live checkout or completed provider acceptance. It extends ADR-001 without changing frozen V1. The existing owned order, payment attempt/work, capture-fact table and stock ledger remain the authorities; provider Session associations and event receipts contain transport evidence, not a second payment balance.
 
 ## Customer and owner flow
 

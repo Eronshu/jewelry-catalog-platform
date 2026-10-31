@@ -30,6 +30,8 @@ import {
 import { readCommerceForm } from "./request.server";
 import { stripeRuntimeConfig } from "./stripe-runtime-config.server";
 import { readOwnedStripePayment } from "./owned-stripe.server";
+import { paypalRuntimeConfig } from "./paypal-runtime-config.server";
+import { readOwnedPayPalPayment } from "./owned-paypal.server";
 
 export const checkoutHeaders = {
   "Cache-Control": "private, no-store",
@@ -197,6 +199,21 @@ async function owned(
   return { ...order, lines };
 }
 export { owned as readOwnedCheckoutOrder };
+/** The existing canonical attempt, not browser choice or return parameters, locks the provider. */
+export async function readOwnedPaymentProvider(
+  db: D1Database,
+  scope: TestCheckoutContext,
+  orderId: string,
+): Promise<"stripe" | "paypal" | null> {
+  const row = await db
+    .prepare(
+      `SELECT a.provider FROM commerce_payment_attempts a JOIN commerce_checkout_order_origins x ON x.order_id=a.order_id
+WHERE a.order_id=? AND a.mode=x.mode AND a.instance_id=x.instance_id AND a.owner_hash=x.owner_hash AND x.mode=? AND x.instance_id=? AND x.owner_hash=?`,
+    )
+    .bind(orderId, scope.mode, scope.instanceId, scope.ownerHash)
+    .first<{ provider: "stripe" | "paypal" }>();
+  return row?.provider ?? null;
+}
 export async function loadCheckoutConfirmation(
   request: Request,
   env: Env,
@@ -342,22 +359,48 @@ export async function loadCheckoutOrder(
     const order = await owned(env.DB, session.context, id);
     if (!order) return inaccessible();
     const stripeConfig = stripeRuntimeConfig(request, env);
-    const stripe = stripeConfig
-      ? await readOwnedStripePayment(
-          env.DB,
-          stripeConfig.provider,
-          session.context.ownerHash,
-          id,
-        )
-      : null;
+    const paypalConfig = paypalRuntimeConfig(request, env);
+    const paymentProvider = await readOwnedPaymentProvider(
+      env.DB,
+      session.context,
+      id,
+    );
+    const stripe =
+      stripeConfig && paymentProvider !== "paypal"
+        ? await readOwnedStripePayment(
+            env.DB,
+            stripeConfig.provider,
+            session.context.ownerHash,
+            id,
+          )
+        : null;
+    const paypal =
+      paypalConfig && paymentProvider !== "stripe"
+        ? await readOwnedPayPalPayment(
+            env.DB,
+            paypalConfig.provider,
+            session.context.ownerHash,
+            id,
+          )
+        : null;
     return json({
       csrfToken: session.csrfToken,
       order,
       canPreparePayment:
-        !stripeConfig && checkoutPaymentPreparationEnabled(request, env),
+        !stripeConfig &&
+        !paypalConfig &&
+        checkoutPaymentPreparationEnabled(request, env),
       stripe: stripe
         ? { ...stripe, canStart: stripe.canStart && stripeConfig!.canStart }
         : null,
+      paypal: paypal
+        ? {
+            ...paypal,
+            canStart: paypal.canStart && paypalConfig!.canStart,
+            canCapture: paypal.canCapture && paypalConfig!.canCapture,
+          }
+        : null,
+      paymentProvider,
     });
   } catch (error) {
     if (error instanceof CheckoutSessionError && error.code !== "unavailable")

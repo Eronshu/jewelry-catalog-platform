@@ -590,7 +590,7 @@ describe("owned checkout payment preparation on real local D1", () => {
     ).rejects.toThrow();
     for (const changes of [
       { rules_version: "local-test-v1" },
-      { provider: "paypal", account_ref: "fixture-paypal" },
+      { provider: "paypal", account_ref: "fixture-stripe" },
       { amount_cents: 4405 },
       { instance_id: crypto.randomUUID() },
     ]) {

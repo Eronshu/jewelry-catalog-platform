@@ -7,6 +7,8 @@ import {
 } from "react-router";
 import { StripeCheckout } from "../components/storefront/stripe-checkout";
 import type { OwnedStripePayment } from "../lib/commerce/owned-stripe.server";
+import { PayPalCheckout } from "../components/storefront/paypal-checkout";
+import type { OwnedPayPalPayment } from "../lib/commerce/owned-paypal.server";
 import type { Route } from "./+types/checkout-order";
 import { cloudflareContext } from "../cloudflare-context";
 import { formatCad } from "../lib/format-cad";
@@ -34,6 +36,9 @@ export function OwnedOrderView({
   canPreparePayment = false,
   stripe = null,
   returned = false,
+  paypal = null,
+  paypalReturned = false,
+  paymentProvider = null,
 }: {
   order: OwnedCheckoutOrder;
   csrfToken: string;
@@ -41,14 +46,18 @@ export function OwnedOrderView({
   canPreparePayment?: boolean;
   stripe?: OwnedStripePayment | null;
   returned?: boolean;
+  paypal?: OwnedPayPalPayment | null;
+  paypalReturned?: boolean;
+  paymentProvider?: "stripe" | "paypal" | null;
 }) {
   const [order, setOrder] = useState(initial);
   const [operationInFlight, setOperationInFlight] = useState<
     "cancel" | "prepare" | null
   >(null);
-  const [stripeBusy, setStripeBusy] = useState(false);
-  const [stripeTouched, setStripeTouched] = useState(false);
-  const busy = operationInFlight !== null || stripeBusy;
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentTouched, setPaymentTouched] = useState(false);
+  const [activeProvider, setActiveProvider] = useState(paymentProvider);
+  const busy = operationInFlight !== null || paymentBusy;
   const [error, setError] = useState("");
   const [uncertain, setUncertain] = useState<"cancel" | "prepare" | null>(null);
   const release = useRef<string | null>(null);
@@ -125,13 +134,13 @@ export function OwnedOrderView({
           : order.paymentState === "succeeded"
             ? "Test order confirmed"
             : order.paymentState === "processing"
-              ? stripe
+              ? stripe || paypal
                 ? "Test payment in progress"
                 : "Test payment attempt recorded"
               : "Unpaid test order"}
       </h1>
       <p style={{ overflowWrap: "anywhere" }}>Reference: {order.id}</p>
-      {!stripe && order.paymentState !== "succeeded" && (
+      {!stripe && !paypal && order.paymentState !== "succeeded" && (
         <p>
           <strong>No payment is available or configured.</strong> Payment has
           not been verified on this order. No real purchase, delivery or
@@ -162,7 +171,7 @@ export function OwnedOrderView({
         )[order.delivery] ?? "Test delivery"}
       </p>
       <CheckoutAmounts quote={order} />
-      {!stripe && order.paymentState === "processing" && (
+      {!stripe && !paypal && order.paymentState === "processing" && (
         <p role="status">
           <strong>A test payment attempt is recorded.</strong> This page has no
           active provider connection. Stock stays protected pending payment
@@ -198,7 +207,7 @@ export function OwnedOrderView({
         </button>
         {order.state === "pending_payment" &&
           order.paymentState === "not_started" &&
-          !stripeTouched && (
+          !paymentTouched && (
             <button
               className="commerce-secondary-button"
               type="button"
@@ -227,7 +236,13 @@ export function OwnedOrderView({
             </button>
           )}
       </div>
-      {stripe && order.state !== "cancelled" && (
+      {(stripe || paypal) && !activeProvider && order.state !== "cancelled" && (
+        <p>
+          Choose one test payment method. Once started, keep the same method and
+          order while its result is being checked.
+        </p>
+      )}
+      {stripe && activeProvider !== "paypal" && order.state !== "cancelled" && (
         <StripeCheckout
           order={order}
           initial={stripe}
@@ -236,8 +251,28 @@ export function OwnedOrderView({
           disabled={operationInFlight !== null || uncertain !== null}
           onOrderChanged={setOrder}
           onBusyChanged={(value) => {
-            setStripeBusy(value);
-            if (value) setStripeTouched(true);
+            setPaymentBusy(value);
+            if (value) {
+              setPaymentTouched(true);
+              setActiveProvider("stripe");
+            }
+          }}
+        />
+      )}
+      {paypal && activeProvider !== "stripe" && order.state !== "cancelled" && (
+        <PayPalCheckout
+          order={order}
+          initial={paypal}
+          csrfToken={csrfToken}
+          returned={paypalReturned}
+          disabled={operationInFlight !== null || uncertain !== null}
+          onOrderChanged={setOrder}
+          onBusyChanged={(value) => {
+            setPaymentBusy(value);
+            if (value) {
+              setPaymentTouched(true);
+              setActiveProvider("paypal");
+            }
           }}
         />
       )}
@@ -254,6 +289,8 @@ export default function Order() {
     csrfToken: string;
     canPreparePayment: boolean;
     stripe?: OwnedStripePayment | null;
+    paypal?: OwnedPayPalPayment | null;
+    paymentProvider?: "stripe" | "paypal" | null;
     error?: string;
   }>();
   const revalidator = useRevalidator();
@@ -273,6 +310,11 @@ export default function Order() {
           csrfToken={data.csrfToken}
           canPreparePayment={data.canPreparePayment}
           stripe={data.stripe}
+          paypal={data.paypal}
+          paymentProvider={data.paymentProvider}
+          paypalReturned={["success", "cancel"].includes(
+            search.get("paypal_return") ?? "",
+          )}
           returned={["success", "cancel"].includes(
             search.get("stripe_return") ?? "",
           )}

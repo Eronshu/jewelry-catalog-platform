@@ -10,6 +10,8 @@ export default [
   route("checkout/orders/:orderId/cancel", "routes/checkout-order-cancel.ts"),
   route("checkout/orders/:orderId/stripe", "routes/checkout-order-stripe.ts"),
   route("checkout/stripe/webhook", "routes/checkout-stripe-webhook.ts"),
+  route("checkout/orders/:orderId/paypal", "routes/checkout-order-paypal.ts"),
+  route("checkout/paypal/webhook", "routes/checkout-paypal-webhook.ts"),
   route(
     "checkout/orders/:orderId/prepare-payment",
     "routes/checkout-order-payment.ts",

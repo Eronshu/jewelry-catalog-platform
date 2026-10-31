@@ -11,6 +11,9 @@ import * as CancelRoute from "../../routes/checkout-order-cancel";
 import * as PaymentRoute from "../../routes/checkout-order-payment";
 import * as ConfirmationRoute from "../../routes/checkout-confirm";
 import * as StatusRoute from "../../routes/checkout-order";
+import * as PayPalRoute from "../../routes/checkout-order-paypal";
+import * as PayPalWebhookRoute from "../../routes/checkout-paypal-webhook";
+import { actPayPalCheckout, actPayPalWebhook } from "./paypal-checkout.server";
 import * as StripeRoute from "../../routes/checkout-order-stripe";
 import * as StripeWebhookRoute from "../../routes/checkout-stripe-webhook";
 import { actStripeCheckout, actStripeWebhook } from "./stripe-checkout.server";
@@ -183,6 +186,16 @@ function workspaceContext(env = settings()) {
   return value;
 }
 const commandRoutes = {
+  paypal: {
+    id: "paypal",
+    path: "checkout/orders/:orderId/paypal",
+    module: PayPalRoute,
+  },
+  paypalWebhook: {
+    id: "paypalWebhook",
+    path: "checkout/paypal/webhook",
+    module: PayPalWebhookRoute,
+  },
   stripe: {
     id: "stripe",
     path: "checkout/orders/:orderId/stripe",
@@ -310,6 +323,262 @@ afterAll(async () => {
 });
 
 describe("visible customer order flow on real temporary D1", () => {
+  it("connects private PayPal approval and explicit capture to the same order, stock and owner view", async () => {
+    const client = await browser(),
+      created = await create(client);
+    const merchant = "2".repeat(13);
+    const enabled = settings(db, {
+      COMMERCE_PAYPAL_SANDBOX: "local-test",
+      COMMERCE_PAYPAL_NEW_ORDERS: "local-test",
+      COMMERCE_PAYPAL_CAPTURE: "local-test",
+      COMMERCE_PAYPAL_MERCHANT_ID: merchant,
+      COMMERCE_PAYPAL_CLIENT_ID: "0".repeat(32),
+      COMMERCE_PAYPAL_CLIENT_SECRET: "1".repeat(32),
+      COMMERCE_PAYPAL_WEBHOOK_ID: "FICTIONALWEBHOOK",
+      COMMERCE_STRIPE_SANDBOX: "local-test",
+      COMMERCE_STRIPE_NEW_SESSIONS: "local-test",
+      COMMERCE_STRIPE_ACCOUNT_ID: "acct_FictionalRoute123",
+      COMMERCE_STRIPE_TEST_SECRET: ["sk", "test", "0".repeat(24)].join("_"),
+    });
+    const paused = {
+      ...enabled,
+      COMMERCE_PAYPAL_NEW_ORDERS: undefined,
+      COMMERCE_PAYPAL_CAPTURE: undefined,
+    } as unknown as Env;
+    let now = Date.now(),
+      status = "CREATED";
+    let unit: Record<string, unknown>;
+    const providerOrderId = "OFICTIONALROUTE123",
+      captureId = "CFICTIONALROUTE123";
+    const capture = () => ({
+      id: captureId,
+      status: "COMPLETED",
+      final_capture: true,
+      amount: { currency_code: "CAD", value: "44.00" },
+    });
+    const order = () => ({
+      id: providerOrderId,
+      intent: "CAPTURE",
+      status,
+      purchase_units: [
+        {
+          ...unit,
+          ...(status === "COMPLETED"
+            ? { payments: { captures: [capture()], refunds: [] } }
+            : {}),
+        },
+      ],
+      links: [
+        {
+          rel: "approve",
+          method: "GET",
+          href: `https://www.sandbox.paypal.com/checkoutnow?token=${providerOrderId}`,
+        },
+      ],
+    });
+    const transport = vi.fn(async (url: string, init: RequestInit) => {
+      expect(new URL(url).origin).toBe("https://api-m.sandbox.paypal.com");
+      const path = new URL(url).pathname;
+      if (path === "/v1/oauth2/token")
+        return Response.json({
+          access_token: "0".repeat(32),
+          token_type: "Bearer",
+          expires_in: 300,
+        });
+      if (path === "/v2/checkout/orders" && init.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        unit = body.purchase_units[0];
+        expect(unit).toMatchObject({
+          reference_id: created.orderId,
+          amount: { currency_code: "CAD", value: "44.00" },
+          payee: { merchant_id: merchant },
+        });
+        return Response.json(order());
+      }
+      if (path === `/v2/checkout/orders/${providerOrderId}`)
+        return Response.json(order());
+      if (path === `/v2/checkout/orders/${providerOrderId}/capture`) {
+        status = "COMPLETED";
+        return Response.json(order());
+      }
+      if (path === `/v2/payments/captures/${captureId}`)
+        return Response.json({
+          ...capture(),
+          payee: { merchant_id: merchant },
+          supplementary_data: { related_ids: { order_id: providerOrderId } },
+          custom_id: unit.custom_id,
+        });
+      if (path === "/v1/notifications/verify-webhook-signature")
+        return Response.json({ verification_status: "SUCCESS" });
+      throw new Error("Unexpected injected PayPal path");
+    });
+    const path = `/checkout/orders/${created.orderId}/paypal`;
+    const input = {
+      csrf: client.csrfToken,
+      operation: "start",
+      requestId: crypto.randomUUID(),
+      expectedVersion: "1",
+    };
+    const run = (operation: string, env = enabled) =>
+      actPayPalCheckout(
+        post(path, client.cookie, { ...input, operation }),
+        env,
+        created.orderId,
+        transport,
+        () => now,
+      );
+    const start = await run("start");
+    expect(start.status).toBe(200);
+    expect(await start.json()).toMatchObject({
+      paypal: { state: "open", canStart: false },
+      order: { paymentState: "processing" },
+    });
+    const beforeReturn = transport.mock.calls.length;
+    const returned = await loadCheckoutOrder(
+      get(
+        `/checkout/orders/${created.orderId}?paypal_return=success`,
+        client.cookie,
+      ),
+      enabled,
+      created.orderId,
+    );
+    expect(await returned.json()).toMatchObject({
+      paymentProvider: "paypal",
+      stripe: null,
+      paypal: { state: "open" },
+      order: { paymentState: "processing" },
+    });
+    expect(transport).toHaveBeenCalledTimes(beforeReturn);
+    expect(
+      (
+        await actStripeCheckout(
+          post(
+            `/checkout/orders/${created.orderId}/stripe`,
+            client.cookie,
+            input,
+          ),
+          enabled,
+          created.orderId,
+          transport,
+          () => now,
+        )
+      ).status,
+    ).toBe(409);
+    expect((await run("start", paused)).status).toBe(503);
+    status = "APPROVED";
+    now += 31000;
+    const approved = await run("query", paused);
+    expect(approved.status).toBe(200);
+    expect(await approved.json()).toMatchObject({
+      paypal: { state: "approved", canCapture: false },
+      order: { paymentState: "processing" },
+    });
+    expect(
+      transport.mock.calls.filter(([url]) => url.endsWith("/capture")),
+    ).toHaveLength(0);
+    expect((await run("capture", paused)).status).toBe(503);
+    const paid = await run("capture");
+    expect(paid.status).toBe(200);
+    expect(await paid.json()).toMatchObject({
+      paypal: { state: "paid", canStart: false, canCapture: false },
+      order: { state: "confirmed", paymentState: "succeeded" },
+    });
+    expect(
+      transport.mock.calls.filter(([url]) => url.endsWith("/capture")),
+    ).toHaveLength(1);
+    expect(
+      await db
+        .prepare(
+          "SELECT checkout_reserved,allocated FROM commerce_inventory WHERE variant_id=?",
+        )
+        .bind(created.variantId)
+        .first(),
+    ).toEqual({ checkout_reserved: 0, allocated: 1 });
+    expect(
+      (
+        await loadCommerceWorkspace(
+          get(`/admin/commerce/orders/${created.orderId}`),
+          workspaceContext(),
+          "order",
+          created.orderId,
+        )
+      ).data,
+    ).toMatchObject({
+      order: {
+        orderState: "confirmed",
+        paymentState: "succeeded",
+        fulfillmentState: "ready_to_pack",
+      },
+    });
+    expect((await run("capture")).status).toBe(200);
+    expect(
+      transport.mock.calls.filter(([url]) => url.endsWith("/capture")),
+    ).toHaveLength(1);
+  });
+  it("refuses PayPal config, ownership, CSRF, extra amounts and unsigned webhook before dispatch", async () => {
+    const client = await browser(),
+      stranger = await browser(),
+      created = await create(client);
+    const env = settings(db, {
+      COMMERCE_PAYPAL_SANDBOX: "local-test",
+      COMMERCE_PAYPAL_NEW_ORDERS: "local-test",
+      COMMERCE_PAYPAL_CAPTURE: "local-test",
+      COMMERCE_PAYPAL_MERCHANT_ID: "2".repeat(13),
+      COMMERCE_PAYPAL_CLIENT_ID: "0".repeat(32),
+      COMMERCE_PAYPAL_CLIENT_SECRET: "1".repeat(32),
+      COMMERCE_PAYPAL_WEBHOOK_ID: "FICTIONALWEBHOOK",
+    });
+    const transport = vi.fn(async () => {
+      throw new Error("No provider request allowed");
+    });
+    const input = {
+      csrf: client.csrfToken,
+      operation: "start",
+      requestId: crypto.randomUUID(),
+      expectedVersion: "1",
+    };
+    const path = `/checkout/orders/${created.orderId}/paypal`;
+    for (const [cookie, form, config, expected] of [
+      [client.cookie, input, settings(), 503],
+      [stranger.cookie, { ...input, csrf: stranger.csrfToken }, env, 404],
+      [client.cookie, { ...input, csrf: "0".repeat(64) }, env, 403],
+      [client.cookie, { ...input, totalCents: "1" }, env, 422],
+    ] as const)
+      expect(
+        (
+          await actPayPalCheckout(
+            post(path, cookie, form),
+            config,
+            created.orderId,
+            transport,
+          )
+        ).status,
+      ).toBe(expected);
+    expect(
+      (
+        await actPayPalWebhook(
+          new Request(origin + "/checkout/paypal/webhook", {
+            method: "POST",
+            body: "{}",
+          }),
+          env,
+          transport,
+        )
+      ).status,
+    ).toBe(400);
+    expect(transport).not.toHaveBeenCalled();
+    const cancelled = await cancelCheckoutOrder(
+      post(`/checkout/orders/${created.orderId}/cancel`, client.cookie, {
+        csrf: client.csrfToken,
+        releaseKey: crypto.randomUUID(),
+        expectedVersion: "1",
+      }),
+      settings(),
+      created.orderId,
+    );
+    expect(cancelled.status).toBe(200);
+  });
+
   it("connects owned checkout, hosted test Session, canonical payment, shared inventory and owner status without trusting the return", async () => {
     const client = await browser();
     const created = await create(client);
