@@ -9,6 +9,7 @@ import { beginOwnedCheckoutPaymentAttempt } from "./payment-start.server";
 import {
   checkoutHeaders,
   readOwnedCheckoutOrder,
+  readOwnedPaymentProvider,
 } from "./checkout-flow.server";
 import {
   startOwnedStripePayment,
@@ -70,6 +71,17 @@ export async function actStripeCheckout(
       orderId,
     );
     if (!order) return json({ error: "Private test order unavailable." }, 404);
+    if (
+      (await readOwnedPaymentProvider(env.DB, session.context, orderId)) ===
+      "paypal"
+    )
+      return json(
+        {
+          error:
+            "This order already has a PayPal attempt. Check the same payment; do not switch methods.",
+        },
+        409,
+      );
     const isStart = form.get("operation") === "start";
     if (isStart && !config.canStart)
       return json(

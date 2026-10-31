@@ -540,7 +540,7 @@ export async function beginOwnedCheckoutPaymentAttempt(
   ]);
   input = copy(input, ["requestId", "reference", "expectedVersion"]);
   if (
-    trusted.provider !== "stripe" ||
+    (trusted.provider !== "stripe" && trusted.provider !== "paypal") ||
     typeof clock !== "function" ||
     (beforeCommit !== undefined && typeof beforeCommit !== "function")
   )

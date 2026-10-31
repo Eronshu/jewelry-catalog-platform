@@ -8,6 +8,7 @@
     "scripts/commerce-expiry-driver.mjs",
     "scripts/commerce-local-config.mjs",
     "scripts/commerce-stripe-config.mjs",
+    "scripts/commerce-paypal-config.mjs",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {

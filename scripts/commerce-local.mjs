@@ -10,6 +10,7 @@ import { readPlacesTestSettings } from "./commerce-places-config.mjs";
 import { createLocalExpiryDriver } from "./commerce-expiry-driver.mjs";
 import { readCommerceLocalPort } from "./commerce-local-config.mjs";
 import { readStripeTestSettings } from "./commerce-stripe-config.mjs";
+import { readPayPalTestSettings } from "./commerce-paypal-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2)
@@ -20,6 +21,7 @@ const port = readCommerceLocalPort(process.env.COMMERCE_LOCAL_PORT);
 const directory = mkdtempSync(join(tmpdir(), "jewelry-commerce-local-"));
 const places = readPlacesTestSettings(process.env);
 const stripe = readStripeTestSettings(process.env, root);
+const paypal = readPayPalTestSettings(process.env, root);
 const expiryMode = process.env.COMMERCE_EXPIRY_MODE;
 if (expiryMode !== undefined && expiryMode !== "local-test")
   throw new Error(
@@ -32,29 +34,31 @@ if (preparationMode !== undefined && preparationMode !== "1")
   throw new Error(
     "COMMERCE_LOCAL_PAYMENT_PREPARE only accepts 1; preparation sends no provider request.",
   );
-const preparePayment = preparationMode === "1" || stripe !== null;
+const preparePayment =
+  preparationMode === "1" || stripe !== null || paypal !== null;
 const privateSettings = {
   ...places,
   ...stripe,
+  ...paypal,
   ...(expiryToken ? { COMMERCE_LOCAL_EXPIRY_TOKEN: expiryToken } : {}),
 };
 if (Object.keys(privateSettings).length)
   writeFileSync(
     join(directory, ".dev.vars"),
     Object.entries(privateSettings)
-      .map(([name, value]) => `${name}=${value}`)
+      .map(([name, value]) => `${name}=${JSON.stringify(value)}`)
       .join("\n"),
     { mode: 0o600 },
   );
-function removeGeneratedStripeSettings() {
-  if (!stripe) return;
+function removeGeneratedPaymentSettings() {
+  if (!stripe && !paypal) return;
   try {
     unlinkSync(join(directory, ".dev.vars"));
   } catch {
     // Never report private file contents or provider credentials.
   }
 }
-process.once("exit", removeGeneratedStripeSettings);
+process.once("exit", removeGeneratedPaymentSettings);
 const config = join(directory, "wrangler.json");
 const state = join(directory, "state");
 writeFileSync(
@@ -95,6 +99,13 @@ writeFileSync(
           ? {
               COMMERCE_STRIPE_SANDBOX: "local-test",
               COMMERCE_STRIPE_NEW_SESSIONS: "local-test",
+            }
+          : {}),
+        ...(paypal
+          ? {
+              COMMERCE_PAYPAL_SANDBOX: "local-test",
+              COMMERCE_PAYPAL_NEW_ORDERS: "local-test",
+              COMMERCE_PAYPAL_CAPTURE: "local-test",
             }
           : {}),
       },
@@ -212,7 +223,11 @@ if (stripe)
   console.log(
     "Stripe Sandbox enabled explicitly: pressing Pay with Stripe will call the test provider. Use fictional orders and provider test cards only. No live payments. The private configuration is not printed.",
   );
-else if (preparePayment)
+if (paypal)
+  console.log(
+    "PayPal Sandbox enabled explicitly: approval and capture controls can call the test provider. Use fictional orders/test accounts only; configuration is not printed.",
+  );
+if (preparePayment && !stripe && !paypal)
   console.log(
     "Stripe test preparation enabled: records an intent and protects fictional stock. No provider request or payment is sent; existing attempts cannot use unpaid cancellation/expiry.",
   );
@@ -255,6 +270,6 @@ for (const signal of ["SIGINT", "SIGTERM"])
   });
 server.on("exit", (code) => {
   expiry?.stop();
-  removeGeneratedStripeSettings();
+  removeGeneratedPaymentSettings();
   process.exitCode = code ?? 0;
 });

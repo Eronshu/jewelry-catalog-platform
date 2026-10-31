@@ -47,6 +47,7 @@ async function mount(
   status = false,
   canPreparePayment = false,
   stripeEnabled = false,
+  paypalEnabled = false,
 ) {
   const router = createMemoryRouter(
     [
@@ -71,6 +72,16 @@ async function mount(
             stripe={
               stripeEnabled
                 ? { state: "not_started", canStart: true, canQuery: false }
+                : null
+            }
+            paypal={
+              paypalEnabled
+                ? {
+                    state: "not_started",
+                    canStart: true,
+                    canQuery: false,
+                    canCapture: false,
+                  }
                 : null
             }
           />
@@ -263,10 +274,23 @@ describe("final fictional order confirmation and private status UI", () => {
     fetcher.mockResolvedValueOnce(
       Response.json({ order: { ...order, state: "cancelled", version: 2 } }),
     );
-    await mount(true, false, true);
+    await mount(true, false, true, true);
     expect(button("Pay with Stripe")).toBeDefined();
     await click(button("Cancel unpaid"));
     expect(host.textContent).toContain("Test order cancelled");
     expect(button("Pay with Stripe")).toBeUndefined();
+    expect(button("Pay with PayPal")).toBeUndefined();
+  });
+  it("hides the competing provider after starting one method even when its response is lost", async () => {
+    fetcher.mockRejectedValueOnce(new Error("Unknown start"));
+    await mount(true, false, true, true);
+    expect(button("Pay with Stripe")).toBeDefined();
+    expect(button("Pay with PayPal")).toBeDefined();
+    await click(button("Pay with PayPal"));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(button("Pay with Stripe")).toBeUndefined();
+    expect(button("Pay with PayPal")).toBeUndefined();
+    expect(button("Cancel unpaid")).toBeUndefined();
+    expect(button("Check PayPal")).toBeDefined();
   });
 });
