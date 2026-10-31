@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createStripeSandboxSession as create,
   retrieveStripeSandboxSession as retrieve,
+  retrieveStripeSandboxCapture as capture,
   expireStripeSandboxSession as expire,
   verifyStripeSandboxWebhook as verify,
   STRIPE_SANDBOX_API_VERSION as version,
@@ -64,6 +65,52 @@ function providerSession(overrides: Record<string, unknown> = {}) {
     metadata: { ...scopeMetadata },
     url: "https://checkout.stripe.com/c/pay/fictional#test",
     customer_details: { email: "private-fixture@example.invalid" },
+    ...overrides,
+  };
+}
+const paymentIntentId = "pi_FictionalIntent123";
+const chargeId = "ch_FictionalCharge123";
+function paidSession(overrides: Record<string, unknown> = {}) {
+  return providerSession({
+    status: "complete",
+    payment_status: "paid",
+    url: null,
+    ...overrides,
+  });
+}
+function paymentIntent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: paymentIntentId,
+    object: "payment_intent",
+    status: "succeeded",
+    currency: "cad",
+    amount: input.amountCents,
+    amount_received: input.amountCents,
+    amount_capturable: 0,
+    livemode: false,
+    latest_charge: chargeId,
+    metadata: { ...scopeMetadata },
+    client_secret: "private-fixture-client-secret",
+    receipt_email: "private-fixture@example.invalid",
+    ...overrides,
+  };
+}
+function charge(overrides: Record<string, unknown> = {}) {
+  return {
+    id: chargeId,
+    object: "charge",
+    payment_intent: paymentIntentId,
+    status: "succeeded",
+    currency: "cad",
+    amount: input.amountCents,
+    amount_captured: input.amountCents,
+    amount_refunded: 0,
+    paid: true,
+    captured: true,
+    refunded: false,
+    disputed: false,
+    livemode: false,
+    billing_details: { email: "private-fixture@example.invalid" },
     ...overrides,
   };
 }
@@ -134,6 +181,10 @@ describe("isolated Stripe Sandbox transport", () => {
       `${config.canonicalOrigin}/checkout/orders/${input.orderId}?stripe_return=cancel`,
     );
     expect(body.get("expires_at")).toBe(String(input.sessionExpiresAt));
+    for (const [key, value] of Object.entries(scopeMetadata)) {
+      expect(body.get(`metadata[${key}]`)).toBe(value);
+      expect(body.get(`payment_intent_data[metadata][${key}]`)).toBe(value);
+    }
     expect(
       [...body.keys()].some((key) => /customer|email|address/.test(key)),
     ).toBe(false);
@@ -254,6 +305,7 @@ describe("isolated Stripe Sandbox transport", () => {
     for (const action of [
       (call: StripeSandboxFetch) => create(config, input, call, clock),
       (call: StripeSandboxFetch) => retrieve(config, reference, call),
+      (call: StripeSandboxFetch) => capture(config, reference, call),
       (call: StripeSandboxFetch) => expire(config, expireInput, call),
     ]) {
       const call = fetcher(() =>
@@ -479,6 +531,217 @@ describe("isolated Stripe Sandbox transport", () => {
       if (phase === "body") expect(cancelled).toHaveBeenCalledTimes(1);
       expect(call).toHaveBeenCalledTimes(phase === "account" ? 1 : 2);
     }
+  });
+});
+
+describe("canonical Stripe Sandbox capture", () => {
+  it("retrieves account, Session, PaymentIntent and latest Charge before returning only safe full-capture facts", async () => {
+    const call = fetcher(
+      account,
+      () => Response.json(paidSession()),
+      () => Response.json(paymentIntent()),
+      () => Response.json(charge()),
+    );
+    const result = await capture(config, reference, call);
+    expect(result).toEqual({
+      paymentIntentId,
+      chargeId,
+      amountCents: 4400,
+      currency: "CAD",
+    });
+    expect(call.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.stripe.com/v1/account",
+      `https://api.stripe.com/v1/checkout/sessions/${sessionId}`,
+      `https://api.stripe.com/v1/payment_intents/${paymentIntentId}`,
+      `https://api.stripe.com/v1/charges/${chargeId}`,
+    ]);
+    for (const [, init] of call.mock.calls) {
+      expect(init.method).toBe("GET");
+      expect(init.body).toBeUndefined();
+      expect(init.redirect).toBe("error");
+      expect(new Headers(init.headers).get("Stripe-Version")).toBe(version);
+      expect(new Headers(init.headers).get("Authorization")).toBe(
+        `Bearer ${config.testSecretKey}`,
+      );
+    }
+    expect(JSON.stringify(result)).not.toMatch(
+      /private-fixture|client_secret|billing_details|receipt_email|sk_test/,
+    );
+  });
+
+  it("retains an unpaid/delayed/canceled Session as reconciliation work, never capture proof", async () => {
+    for (const value of [
+      providerSession(),
+      providerSession({ status: "expired", url: null }),
+      providerSession({
+        status: "complete",
+        payment_status: "unpaid",
+        url: null,
+      }),
+    ]) {
+      const call = fetcher(account, () => Response.json(value));
+      await expect(capture(config, reference, call)).rejects.toMatchObject({
+        code: "reconcile_required",
+      });
+      expect(call).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("rejects Session association, amount, currency and live-mode mismatches before reading financial objects", async () => {
+    for (const value of [
+      { id: "cs_test_OtherSession123" },
+      { payment_intent: null },
+      { amount_total: 4401 },
+      { currency: "usd" },
+      { client_reference_id: "other-order" },
+      { livemode: true },
+      { metadata: { ...scopeMetadata, account_ref: "acct_OtherAccount123" } },
+    ]) {
+      const call = fetcher(account, () => Response.json(paidSession(value)));
+      await expect(capture(config, reference, call)).rejects.toMatchObject({
+        code: "invalid_response",
+      });
+      expect(call).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("rejects failed/pending/partial/unassociated intents even if the Session claims paid", async () => {
+    for (const changed of [
+      { id: "pi_OtherIntent123" },
+      { object: "charge" },
+      { status: "requires_payment_method" },
+      { status: "processing" },
+      { status: "requires_capture" },
+      { status: "canceled" },
+      { currency: "usd" },
+      { amount: 4401 },
+      { amount_received: 4399 },
+      { amount_received: 4401 },
+      { amount_capturable: 4400 },
+      { livemode: true },
+      { latest_charge: null },
+      { latest_charge: { id: chargeId } },
+      { latest_charge: "../../account" },
+      { metadata: null },
+      ...Object.keys(scopeMetadata).map((key) => ({
+        metadata: { ...scopeMetadata, [key]: "different" },
+      })),
+    ]) {
+      const call = fetcher(
+        account,
+        () => Response.json(paidSession()),
+        () => Response.json(paymentIntent(changed)),
+      );
+      await expect(capture(config, reference, call)).rejects.toMatchObject({
+        code: "invalid_response",
+      });
+      expect(call).toHaveBeenCalledTimes(3);
+    }
+  });
+
+  it("rejects authorization-only, partial, refunded, disputed or mismatched latest charges", async () => {
+    for (const changed of [
+      { id: "ch_OtherCharge123" },
+      { object: "payment_intent" },
+      { payment_intent: "pi_OtherIntent123" },
+      { payment_intent: { id: paymentIntentId } },
+      { status: "pending" },
+      { status: "failed" },
+      { paid: false },
+      { captured: false },
+      { currency: "usd" },
+      { amount: 4399 },
+      { amount_captured: 4399 },
+      { amount_captured: 4401 },
+      { refunded: true },
+      { amount_refunded: 1 },
+      { disputed: true },
+      { livemode: true },
+    ]) {
+      const call = fetcher(
+        account,
+        () => Response.json(paidSession()),
+        () => Response.json(paymentIntent()),
+        () => Response.json(charge(changed)),
+      );
+      await expect(capture(config, reference, call)).rejects.toMatchObject({
+        code: "invalid_response",
+      });
+      expect(call).toHaveBeenCalledTimes(4);
+    }
+  });
+
+  it("can verify a later canonical capture without changing the original association", async () => {
+    const delayed = fetcher(
+      account,
+      () => Response.json(paidSession()),
+      () => Response.json(paymentIntent()),
+      () => Response.json(charge({ captured: false, amount_captured: 0 })),
+    );
+    await expect(capture(config, reference, delayed)).rejects.toMatchObject({
+      code: "invalid_response",
+    });
+    const later = fetcher(
+      account,
+      () => Response.json(paidSession()),
+      () => Response.json(paymentIntent()),
+      () => Response.json(charge()),
+    );
+    await expect(capture(config, reference, later)).resolves.toEqual({
+      paymentIntentId,
+      chargeId,
+      amountCents: input.amountCents,
+      currency: "CAD",
+    });
+  });
+
+  it("bounds failed and timed-out financial reads without retry or upstream secret exposure", async () => {
+    for (const phase of ["intent", "charge"]) {
+      const prefix = [
+        account,
+        () => Response.json(paidSession()),
+        ...(phase === "charge" ? [() => Response.json(paymentIntent())] : []),
+      ];
+      const failed = fetcher(...prefix, () => {
+        throw new Error(`private upstream ${config.testSecretKey}`);
+      });
+      const error = await capture(config, reference, failed).catch(
+        (error) => error,
+      );
+      expect(error).toBeInstanceOf(StripeSandboxError);
+      expect(error).toMatchObject({
+        code: "unavailable",
+        message: "Stripe test operation could not be verified",
+      });
+      expect(error.cause).toBeUndefined();
+      expect(failed).toHaveBeenCalledTimes(phase === "intent" ? 3 : 4);
+      vi.useFakeTimers();
+      const hanging = fetcher(...prefix, () => new Promise<Response>(() => {}));
+      const result = capture(config, reference, hanging).catch(
+        (error) => error,
+      );
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(await result).toMatchObject({ code: "unavailable" });
+      expect(hanging.mock.calls.at(-1)![1].signal!.aborted).toBe(true);
+      expect(hanging).toHaveBeenCalledTimes(phase === "intent" ? 3 : 4);
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects unsafe capture input before any injected transport is used", async () => {
+    const call = fetcher();
+    for (const bad of [
+      { ...reference, sessionId: "../../account" },
+      { ...reference, amountCents: 0 },
+      { ...reference, customer: "untrusted" },
+    ])
+      await expect(capture(config, bad, call)).rejects.toMatchObject({
+        code: "invalid_request",
+      });
+    await expect(
+      capture({ ...config, mode: "live" }, reference, call),
+    ).rejects.toMatchObject({ code: "invalid_config" });
+    expect(call).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,6 @@
 // Each invocation creates new fictional state. Never reads repository env files or remote IDs.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import sharp from "sharp";
 import { readPlacesTestSettings } from "./commerce-places-config.mjs";
 import { createLocalExpiryDriver } from "./commerce-expiry-driver.mjs";
 import { readCommerceLocalPort } from "./commerce-local-config.mjs";
+import { readStripeTestSettings } from "./commerce-stripe-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2)
@@ -18,6 +19,7 @@ if (!existsSync(join(root, "build/server/index.js")))
 const port = readCommerceLocalPort(process.env.COMMERCE_LOCAL_PORT);
 const directory = mkdtempSync(join(tmpdir(), "jewelry-commerce-local-"));
 const places = readPlacesTestSettings(process.env);
+const stripe = readStripeTestSettings(process.env, root);
 const expiryMode = process.env.COMMERCE_EXPIRY_MODE;
 if (expiryMode !== undefined && expiryMode !== "local-test")
   throw new Error(
@@ -30,9 +32,10 @@ if (preparationMode !== undefined && preparationMode !== "1")
   throw new Error(
     "COMMERCE_LOCAL_PAYMENT_PREPARE only accepts 1; preparation sends no provider request.",
   );
-const preparePayment = preparationMode === "1";
+const preparePayment = preparationMode === "1" || stripe !== null;
 const privateSettings = {
   ...places,
+  ...stripe,
   ...(expiryToken ? { COMMERCE_LOCAL_EXPIRY_TOKEN: expiryToken } : {}),
 };
 if (Object.keys(privateSettings).length)
@@ -43,6 +46,15 @@ if (Object.keys(privateSettings).length)
       .join("\n"),
     { mode: 0o600 },
   );
+function removeGeneratedStripeSettings() {
+  if (!stripe) return;
+  try {
+    unlinkSync(join(directory, ".dev.vars"));
+  } catch {
+    // Never report private file contents or provider credentials.
+  }
+}
+process.once("exit", removeGeneratedStripeSettings);
 const config = join(directory, "wrangler.json");
 const state = join(directory, "state");
 writeFileSync(
@@ -78,6 +90,12 @@ writeFileSync(
         COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
         ...(preparePayment
           ? { COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test" }
+          : {}),
+        ...(stripe
+          ? {
+              COMMERCE_STRIPE_SANDBOX: "local-test",
+              COMMERCE_STRIPE_NEW_SESSIONS: "local-test",
+            }
           : {}),
       },
       d1_databases: [
@@ -190,7 +208,11 @@ wrangler([
 console.log(
   `Fictional state preserved at: ${directory}\nShopping preview: http://127.0.0.1:${port}/products/fictional-0\nDeveloper lab: http://127.0.0.1:${port}/commerce-lab\nCtrl-C stops the server. A new run creates a new database; no existing data is deleted.`,
 );
-if (preparePayment)
+if (stripe)
+  console.log(
+    "Stripe Sandbox enabled explicitly: pressing Pay with Stripe will call the test provider. Use fictional orders and provider test cards only. No live payments. The private configuration is not printed.",
+  );
+else if (preparePayment)
   console.log(
     "Stripe test preparation enabled: records an intent and protects fictional stock. No provider request or payment is sent; existing attempts cannot use unpaid cancellation/expiry.",
   );
@@ -233,5 +255,6 @@ for (const signal of ["SIGINT", "SIGTERM"])
   });
 server.on("exit", (code) => {
   expiry?.stop();
+  removeGeneratedStripeSettings();
   process.exitCode = code ?? 0;
 });

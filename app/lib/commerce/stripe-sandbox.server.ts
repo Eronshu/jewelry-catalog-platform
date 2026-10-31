@@ -1,4 +1,4 @@
-/** Offline/injected adapter only: no runtime consumer, default fetch, DB or stock authority.
+/** Explicit-transport Sandbox adapter: no default fetch, DB or stock authority.
  * Callers must persist an intent and stable parameters/key BEFORE dispatch, retain holds
  * on uncertainty, and reconcile provider facts against their own authorized order.
  * Stripe's 30min–24h Session expiry is NOT the existing 10min stock deadline.
@@ -429,8 +429,12 @@ export async function createStripeSandboxSession(
         "Fictional test order — no real purchase",
       "line_items[0][quantity]": "1",
     });
-    for (const [key, value] of Object.entries(metadata(c, a)))
+    for (const [key, value] of Object.entries(metadata(c, a))) {
       body.set(`metadata[${key}]`, value);
+      // Session metadata does not automatically become PaymentIntent metadata.
+      // https://docs.stripe.com/metadata#set-metadata-indirectly
+      body.set(`payment_intent_data[metadata][${key}]`, value);
+    }
     await account(c, fetcher);
     assertExpiry();
     try {
@@ -475,6 +479,98 @@ export async function retrieveStripeSandboxSession(
       a,
       id,
     );
+  } catch (error) {
+    normalize(error);
+  }
+}
+export type StripeSandboxCapture = {
+  paymentIntentId: string;
+  chargeId: string;
+  amountCents: number;
+  currency: "CAD";
+};
+/** Canonical point-in-time evidence only; the caller still owns atomic local order /
+ * stock adjudication and later refund/dispute reconciliation. No redirect or event
+ * payload can replace these reads. Automatic asynchronous capture may require a
+ * later query; an incomplete read must never authorize releasing protected stock.
+ * https://docs.stripe.com/api/payment_intents/object
+ * https://docs.stripe.com/api/charges/object
+ * https://docs.stripe.com/api/charges/retrieve
+ */
+export async function retrieveStripeSandboxCapture(
+  rawConfig: unknown,
+  input: unknown,
+  fetcher: StripeSandboxFetch,
+): Promise<StripeSandboxCapture> {
+  try {
+    const c = config(rawConfig);
+    transport(fetcher);
+    const raw = fields(
+      input,
+      [...associationKeys, "sessionId"],
+      "invalid_request",
+    );
+    const a = association(raw),
+      id = match(raw.sessionId, sessionIdPattern, "invalid_request");
+    await account(c, fetcher);
+    const s = session(
+      await request(c, fetcher, `/v1/checkout/sessions/${id}`),
+      c,
+      a,
+      id,
+    );
+    if (s.status !== "complete" || s.paymentStatus !== "paid")
+      fail("reconcile_required");
+    const paymentIntentId = s.paymentIntentId!;
+    const pi = object(
+      await request(c, fetcher, `/v1/payment_intents/${paymentIntentId}`),
+      "invalid_response",
+    );
+    if (
+      pi.id !== paymentIntentId ||
+      pi.object !== "payment_intent" ||
+      pi.livemode !== false ||
+      pi.status !== "succeeded" ||
+      pi.currency !== "cad" ||
+      pi.amount !== a.amountCents ||
+      pi.amount_received !== a.amountCents ||
+      pi.amount_capturable !== 0
+    )
+      fail("invalid_response");
+    const meta = object(pi.metadata, "invalid_response");
+    for (const [key, expected] of Object.entries(metadata(c, a)))
+      if (meta[key] !== expected) fail("invalid_response");
+    const chargeId = match(
+      pi.latest_charge,
+      /^ch_[A-Za-z0-9]{8,240}$/,
+      "invalid_response",
+    );
+    const charge = object(
+      await request(c, fetcher, `/v1/charges/${chargeId}`),
+      "invalid_response",
+    );
+    if (
+      charge.id !== chargeId ||
+      charge.object !== "charge" ||
+      charge.payment_intent !== paymentIntentId ||
+      charge.livemode !== false ||
+      charge.status !== "succeeded" ||
+      charge.paid !== true ||
+      charge.captured !== true ||
+      charge.currency !== "cad" ||
+      charge.amount !== a.amountCents ||
+      charge.amount_captured !== a.amountCents ||
+      charge.refunded !== false ||
+      charge.amount_refunded !== 0 ||
+      charge.disputed !== false
+    )
+      fail("invalid_response");
+    return {
+      paymentIntentId,
+      chargeId,
+      amountCents: a.amountCents,
+      currency: "CAD",
+    };
   } catch (error) {
     normalize(error);
   }

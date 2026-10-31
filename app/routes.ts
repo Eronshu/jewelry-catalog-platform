@@ -8,6 +8,8 @@ export default [
   route("checkout/quote", "routes/checkout-quote.ts"),
   route("checkout/commands", "routes/checkout-commands.ts"),
   route("checkout/orders/:orderId/cancel", "routes/checkout-order-cancel.ts"),
+  route("checkout/orders/:orderId/stripe", "routes/checkout-order-stripe.ts"),
+  route("checkout/stripe/webhook", "routes/checkout-stripe-webhook.ts"),
   route(
     "checkout/orders/:orderId/prepare-payment",
     "routes/checkout-order-payment.ts",

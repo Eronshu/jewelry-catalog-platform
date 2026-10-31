@@ -145,3 +145,7 @@ npm run admin:shell:preview
 ```
 
 Open `/admin/commerce` at its printed loopback URL. Its Overview/Orders/Order detail/Inventory and empty scenes use clearly marked in-memory fixtures. This preview demonstrates the actual shared components, not authentication, D1 or business actions. Runtime verification separately uses real temporary D1 customer-created orders plus synthetic signed-JWT Worker/React Router boundary tests. Browser screenshots are not authenticated-runtime, real iPhone Safari or owner UAT evidence.
+
+## Stripe owned checkout / Issue #79 (in development)
+
+The private order can expose hosted Stripe **test** payment only under explicit server configuration; default runs stay off. Preparation-only mode still sends no provider request. See [the complete boundary, private file setup, recovery limitations and pending acceptance](./COMMERCE_STRIPE_CHECKOUT.md). No real credentials or provider call was used for offline development. Existing provider-bound stock cannot be released by ordinary unpaid cancellation/expiry. The presentation-only `/stripe-checkout-preview` scene on the separate Admin shell preview has no database/provider endpoint and does not prove payment.

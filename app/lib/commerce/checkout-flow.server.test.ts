@@ -11,6 +11,10 @@ import * as CancelRoute from "../../routes/checkout-order-cancel";
 import * as PaymentRoute from "../../routes/checkout-order-payment";
 import * as ConfirmationRoute from "../../routes/checkout-confirm";
 import * as StatusRoute from "../../routes/checkout-order";
+import * as StripeRoute from "../../routes/checkout-order-stripe";
+import * as StripeWebhookRoute from "../../routes/checkout-stripe-webhook";
+import { actStripeCheckout, actStripeWebhook } from "./stripe-checkout.server";
+import { STRIPE_SANDBOX_API_VERSION } from "./stripe-sandbox.server";
 import {
   loadCheckoutConfirmation,
   actCheckoutConfirmation,
@@ -179,6 +183,16 @@ function workspaceContext(env = settings()) {
   return value;
 }
 const commandRoutes = {
+  stripe: {
+    id: "stripe",
+    path: "checkout/orders/:orderId/stripe",
+    module: StripeRoute,
+  },
+  webhook: {
+    id: "webhook",
+    path: "checkout/stripe/webhook",
+    module: StripeWebhookRoute,
+  },
   commands: {
     id: "commands",
     path: "checkout/commands",
@@ -296,6 +310,321 @@ afterAll(async () => {
 });
 
 describe("visible customer order flow on real temporary D1", () => {
+  it("connects owned checkout, hosted test Session, canonical payment, shared inventory and owner status without trusting the return", async () => {
+    const client = await browser();
+    const created = await create(client);
+    const accountId = "acct_FictionalRoute123";
+    const signingSecret = ["whsec", "0".repeat(24)].join("_");
+    const enabled = settings(db, {
+      COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test",
+      COMMERCE_STRIPE_SANDBOX: "local-test",
+      COMMERCE_STRIPE_NEW_SESSIONS: "local-test",
+      COMMERCE_STRIPE_ACCOUNT_ID: accountId,
+      COMMERCE_STRIPE_TEST_SECRET: ["sk", "test", "0".repeat(24)].join("_"),
+      COMMERCE_STRIPE_SIGNING_SECRET: signingSecret,
+    });
+    const paused = {
+      ...enabled,
+      COMMERCE_STRIPE_NEW_SESSIONS: undefined,
+    } as unknown as Env;
+    let now = Date.now(),
+      captured = false;
+    let session: Record<string, unknown> | undefined;
+    const transport = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url.startsWith("https://api.stripe.com/v1/")).toBe(true);
+      if (url.endsWith("/account"))
+        return Response.json({ object: "account", id: accountId });
+      if (url.endsWith("/checkout/sessions") && init.method === "POST") {
+        const form = new URLSearchParams(String(init.body));
+        const metadata = Object.fromEntries(
+          [...form.entries()]
+            .filter(([key]) => key.startsWith("metadata["))
+            .map(([key, value]) => [key.slice(9, -1), value]),
+        );
+        session = {
+          object: "checkout.session",
+          id: "cs_test_FictionalRoute123",
+          livemode: false,
+          mode: "payment",
+          currency: "cad",
+          amount_total: 4400,
+          client_reference_id: created.orderId,
+          expires_at: Number(form.get("expires_at")),
+          status: "open",
+          payment_status: "unpaid",
+          payment_intent: null,
+          metadata,
+          url: "https://checkout.stripe.com/c/pay/fictional-route",
+        };
+        expect(metadata.attempt_id).toMatch(/^[a-f0-9-]{36}$/);
+        expect(form.get("payment_intent_data[metadata][attempt_id]")).toBe(
+          metadata.attempt_id,
+        );
+        return Response.json(session);
+      }
+      if (url.includes("/checkout/sessions/"))
+        return Response.json({
+          ...session,
+          ...(captured
+            ? {
+                status: "complete",
+                payment_status: "paid",
+                payment_intent: "pi_FictionalRoute123",
+                url: null,
+              }
+            : {}),
+        });
+      if (url.includes("/payment_intents/"))
+        return Response.json({
+          id: "pi_FictionalRoute123",
+          object: "payment_intent",
+          livemode: false,
+          status: "succeeded",
+          currency: "cad",
+          amount: 4400,
+          amount_received: 4400,
+          amount_capturable: 0,
+          metadata: session!.metadata,
+          latest_charge: "ch_FictionalRoute123",
+        });
+      if (url.includes("/charges/"))
+        return Response.json({
+          id: "ch_FictionalRoute123",
+          object: "charge",
+          payment_intent: "pi_FictionalRoute123",
+          livemode: false,
+          status: "succeeded",
+          paid: true,
+          captured: true,
+          currency: "cad",
+          amount: 4400,
+          amount_captured: 4400,
+          refunded: false,
+          amount_refunded: 0,
+          disputed: false,
+        });
+      throw new Error("Unexpected injected test request");
+    });
+    const path = `/checkout/orders/${created.orderId}/stripe`;
+    const input = {
+      csrf: client.csrfToken,
+      operation: "start",
+      requestId: crypto.randomUUID(),
+      expectedVersion: "1",
+    };
+    const start = await actStripeCheckout(
+      post(path, client.cookie, input),
+      enabled,
+      created.orderId,
+      transport,
+      () => now,
+    );
+    expect(start.status).toBe(200);
+    expect(await start.json()).toMatchObject({
+      stripe: { state: "open", canStart: false, canQuery: true },
+      order: {
+        state: "pending_payment",
+        paymentState: "processing",
+        totalCents: 4400,
+      },
+    });
+    expect(
+      transport.mock.calls.filter(([, init]) => init.method === "POST"),
+    ).toHaveLength(1);
+    const returned = await loadCheckoutOrder(
+      get(
+        `/checkout/orders/${created.orderId}?stripe_return=success`,
+        client.cookie,
+      ),
+      enabled,
+      created.orderId,
+    );
+    expect(await returned.json()).toMatchObject({
+      order: { paymentState: "processing" },
+      stripe: { state: "open" },
+    });
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(
+      (
+        await actStripeCheckout(
+          post(path, client.cookie, input),
+          paused,
+          created.orderId,
+          transport,
+          () => now,
+        )
+      ).status,
+    ).toBe(503);
+    captured = true;
+    now += 31000;
+    const query = await actStripeCheckout(
+      post(path, client.cookie, {
+        ...input,
+        operation: "query",
+        expectedVersion: "2",
+      }),
+      paused,
+      created.orderId,
+      transport,
+      () => now,
+    );
+    expect(query.status).toBe(200);
+    expect(await query.json()).toMatchObject({
+      stripe: { state: "paid", canStart: false },
+      order: { state: "confirmed", paymentState: "succeeded", version: 3 },
+    });
+    expect(
+      await db
+        .prepare(
+          "SELECT checkout_reserved,allocated FROM commerce_inventory WHERE variant_id=?",
+        )
+        .bind(created.variantId)
+        .first(),
+    ).toEqual({ checkout_reserved: 0, allocated: 1 });
+    const workspace = await loadCommerceWorkspace(
+      get(`/admin/commerce/orders/${created.orderId}`),
+      workspaceContext(),
+      "order",
+      created.orderId,
+    );
+    expect(workspace.data).toMatchObject({
+      order: {
+        orderState: "confirmed",
+        paymentState: "succeeded",
+        fulfillmentState: "ready_to_pack",
+      },
+    });
+    const raw = JSON.stringify({
+      id: "evt_FictionalRoute123",
+      object: "event",
+      livemode: false,
+      api_version: STRIPE_SANDBOX_API_VERSION,
+      type: "checkout.session.completed",
+      created: Math.floor(now / 1000),
+      data: {
+        object: {
+          ...session,
+          status: "complete",
+          payment_status: "paid",
+          payment_intent: "pi_FictionalRoute123",
+          url: null,
+        },
+      },
+    });
+    const timestamp = Math.floor(now / 1000);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(signingSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const digest = [
+      ...new Uint8Array(
+        await crypto.subtle.sign(
+          "HMAC",
+          key,
+          new TextEncoder().encode(`${timestamp}.${raw}`),
+        ),
+      ),
+    ]
+      .map((x) => x.toString(16).padStart(2, "0"))
+      .join("");
+    const webhook = () =>
+      new Request(origin + "/checkout/stripe/webhook", {
+        method: "POST",
+        body: raw,
+        headers: {
+          "Stripe-Signature": `t=${timestamp},v1=${digest}`,
+          "Content-Type": "application/json",
+        },
+      });
+    expect(
+      (await actStripeWebhook(webhook(), enabled, transport, () => now)).status,
+    ).toBe(200);
+    expect(
+      (await actStripeWebhook(webhook(), enabled, transport, () => now)).status,
+    ).toBe(200);
+    expect(
+      await db
+        .prepare(
+          "SELECT count(*) AS n FROM commerce_payment_capture_facts f JOIN commerce_payment_attempts a ON a.command_id=f.attempt_command_id WHERE a.order_id=?",
+        )
+        .bind(created.orderId)
+        .first(),
+    ).toEqual({ n: 1 });
+  });
+  it("rejects disabled, foreign-owner, client-supplied amounts, CSRF and bad signatures before provider dispatch", async () => {
+    const client = await browser(),
+      stranger = await browser();
+    const created = await create(client);
+    const transport = vi.fn(async () => {
+      throw new Error("No provider calls allowed");
+    });
+    const enabled = settings(db, {
+      COMMERCE_STRIPE_SANDBOX: "local-test",
+      COMMERCE_STRIPE_NEW_SESSIONS: "local-test",
+      COMMERCE_STRIPE_ACCOUNT_ID: "acct_FictionalRoute123",
+      COMMERCE_STRIPE_TEST_SECRET: ["sk", "test", "0".repeat(24)].join("_"),
+      COMMERCE_STRIPE_SIGNING_SECRET: ["whsec", "0".repeat(24)].join("_"),
+    });
+    const path = `/checkout/orders/${created.orderId}/stripe`;
+    const input = {
+      csrf: client.csrfToken,
+      operation: "start",
+      requestId: crypto.randomUUID(),
+      expectedVersion: "1",
+    };
+    for (const [cookie, form, env, status] of [
+      [client.cookie, input, settings(), 503],
+      [stranger.cookie, { ...input, csrf: stranger.csrfToken }, enabled, 404],
+      [client.cookie, { ...input, csrf: "0".repeat(64) }, enabled, 403],
+      [client.cookie, { ...input, totalCents: "1" }, enabled, 422],
+    ] as const)
+      expect(
+        (
+          await actStripeCheckout(
+            post(path, cookie, form),
+            env,
+            created.orderId,
+            transport,
+          )
+        ).status,
+      ).toBe(status);
+    expect(
+      (
+        await actStripeWebhook(
+          new Request(origin + "/checkout/stripe/webhook", {
+            method: "POST",
+            body: "{}",
+            headers: { "Stripe-Signature": "invalid" },
+          }),
+          enabled,
+          transport,
+        )
+      ).status,
+    ).toBe(400);
+    expect(transport).not.toHaveBeenCalled();
+    expect(
+      (
+        await loadCheckoutOrder(
+          get(`/checkout/orders/${created.orderId}`, client.cookie),
+          settings(),
+          created.orderId,
+        )
+      ).status,
+    ).toBe(200);
+    // Leave no unpaid order for the independent bounded expiry test later in this fixture.
+    await cancelCheckoutOrder(
+      post(`/checkout/orders/${created.orderId}/cancel`, client.cookie, {
+        csrf: client.csrfToken,
+        releaseKey: crypto.randomUUID(),
+        expectedVersion: "1",
+      }),
+      settings(),
+      created.orderId,
+    );
+  });
   it("shows customer-created orders and frozen amounts in the owner workspace with matching stock and preparation state", async () => {
     const client = await browser();
     const variant = await fixture();
@@ -728,6 +1057,7 @@ describe("visible customer order flow on real temporary D1", () => {
     expect(await count("commerce_checkout_guest_sessions")).toBe(before);
   });
   it("prepares an owned taxed order through JSON, replays one intent and preserves attempted stock across pause and expiry", async () => {
+    const originalCaptureCount = await count("commerce_payment_capture_facts");
     const client = await browser();
     const created = await create(client);
     const enabled = settings(db, {
@@ -828,7 +1158,9 @@ describe("visible customer order flow on real temporary D1", () => {
       canPreparePayment: false,
       order: { paymentState: "processing", version: 2 },
     });
-    expect(await count("commerce_payment_capture_facts")).toBe(0);
+    expect(await count("commerce_payment_capture_facts")).toBe(
+      originalCaptureCount,
+    );
   });
   it("rejects disabled, other-owner, CSRF, cross-origin and client-amount preparation without writes", async () => {
     const client = await browser(),
