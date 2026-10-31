@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLoaderData, useRevalidator } from "react-router";
+import {
+  Link,
+  useLoaderData,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
+import { StripeCheckout } from "../components/storefront/stripe-checkout";
+import type { OwnedStripePayment } from "../lib/commerce/owned-stripe.server";
 import type { Route } from "./+types/checkout-order";
 import { cloudflareContext } from "../cloudflare-context";
 import { formatCad } from "../lib/format-cad";
@@ -25,17 +32,23 @@ export function OwnedOrderView({
   csrfToken,
   refresh,
   canPreparePayment = false,
+  stripe = null,
+  returned = false,
 }: {
   order: OwnedCheckoutOrder;
   csrfToken: string;
   refresh: () => void;
   canPreparePayment?: boolean;
+  stripe?: OwnedStripePayment | null;
+  returned?: boolean;
 }) {
   const [order, setOrder] = useState(initial);
   const [operationInFlight, setOperationInFlight] = useState<
     "cancel" | "prepare" | null
   >(null);
-  const busy = operationInFlight !== null;
+  const [stripeBusy, setStripeBusy] = useState(false);
+  const [stripeTouched, setStripeTouched] = useState(false);
+  const busy = operationInFlight !== null || stripeBusy;
   const [error, setError] = useState("");
   const [uncertain, setUncertain] = useState<"cancel" | "prepare" | null>(null);
   const release = useRef<string | null>(null);
@@ -109,15 +122,22 @@ export function OwnedOrderView({
       <h1>
         {order.state === "cancelled"
           ? "Test order cancelled"
-          : order.paymentState === "processing"
-            ? "Test payment preparation recorded"
-            : "Unpaid test order"}
+          : order.paymentState === "succeeded"
+            ? "Test order confirmed"
+            : order.paymentState === "processing"
+              ? stripe
+                ? "Test payment in progress"
+                : "Test payment attempt recorded"
+              : "Unpaid test order"}
       </h1>
       <p style={{ overflowWrap: "anywhere" }}>Reference: {order.id}</p>
-      <p>
-        <strong>No payment is available or configured.</strong> This order is
-        not paid. No real purchase, delivery or customer promise exists.
-      </p>
+      {!stripe && order.paymentState !== "succeeded" && (
+        <p>
+          <strong>No payment is available or configured.</strong> Payment has
+          not been verified on this order. No real purchase, delivery or
+          customer promise exists.
+        </p>
+      )}
       {error && (
         <div role="alert" tabIndex={-1} ref={alert}>
           <p>{error}</p>
@@ -142,12 +162,11 @@ export function OwnedOrderView({
         )[order.delivery] ?? "Test delivery"}
       </p>
       <CheckoutAmounts quote={order} />
-      {order.paymentState === "processing" && (
+      {!stripe && order.paymentState === "processing" && (
         <p role="status">
-          <strong>No provider payment request has been sent.</strong> This
-          records only a local test intent, not a Stripe Session or a paid
-          order. Stock stays protected pending payment review; unpaid
-          cancellation and expiry cannot release it.
+          <strong>A test payment attempt is recorded.</strong> This page has no
+          active provider connection. Stock stays protected pending payment
+          review; unpaid cancellation and expiry cannot release it.
         </p>
       )}
       {canPreparePayment &&
@@ -162,9 +181,11 @@ export function OwnedOrderView({
       <p>
         {order.state === "cancelled"
           ? "The unpaid reservation has been released."
-          : order.paymentState === "processing"
-            ? "Refresh to check the current test preparation. The local unpaid expiry driver does not release attempted orders."
-            : `Test reservation deadline: ${new Date(order.reserveUntil).toLocaleString()}. The local expiry driver releases eligible unpaid items. Refresh to check its result.`}
+          : order.paymentState === "succeeded"
+            ? "Test payment was verified and items were allocated. No real purchase or delivery is created."
+            : order.paymentState === "processing"
+              ? "Refresh to check the current test preparation. The local unpaid expiry driver does not release attempted orders."
+              : `Test reservation deadline: ${new Date(order.reserveUntil).toLocaleString()}. The local expiry driver releases eligible unpaid items. Refresh to check its result.`}
       </p>
       <div className="checkout-order-actions">
         <button
@@ -176,7 +197,8 @@ export function OwnedOrderView({
           Refresh status
         </button>
         {order.state === "pending_payment" &&
-          order.paymentState === "not_started" && (
+          order.paymentState === "not_started" &&
+          !stripeTouched && (
             <button
               className="commerce-secondary-button"
               type="button"
@@ -205,6 +227,20 @@ export function OwnedOrderView({
             </button>
           )}
       </div>
+      {stripe && order.state !== "cancelled" && (
+        <StripeCheckout
+          order={order}
+          initial={stripe}
+          csrfToken={csrfToken}
+          returned={returned}
+          disabled={operationInFlight !== null || uncertain !== null}
+          onOrderChanged={setOrder}
+          onBusyChanged={(value) => {
+            setStripeBusy(value);
+            if (value) setStripeTouched(true);
+          }}
+        />
+      )}
       <p>
         <Link to="/checkout/confirm">Your pending orders</Link> ·{" "}
         <Link to="/cart">Your unchanged cart</Link>
@@ -217,9 +253,11 @@ export default function Order() {
     order: OwnedCheckoutOrder;
     csrfToken: string;
     canPreparePayment: boolean;
+    stripe?: OwnedStripePayment | null;
     error?: string;
   }>();
   const revalidator = useRevalidator();
+  const [search] = useSearchParams();
   return (
     <div className="container commerce-page checkout-page">
       {data.error ? (
@@ -234,6 +272,10 @@ export default function Order() {
           order={data.order}
           csrfToken={data.csrfToken}
           canPreparePayment={data.canPreparePayment}
+          stripe={data.stripe}
+          returned={["success", "cancel"].includes(
+            search.get("stripe_return") ?? "",
+          )}
           refresh={() => void revalidator.revalidate()}
         />
       )}

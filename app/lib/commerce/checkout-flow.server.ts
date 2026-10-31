@@ -28,6 +28,8 @@ import {
   CheckoutReleaseError,
 } from "./checkout-release.server";
 import { readCommerceForm } from "./request.server";
+import { stripeRuntimeConfig } from "./stripe-runtime-config.server";
+import { readOwnedStripePayment } from "./owned-stripe.server";
 
 export const checkoutHeaders = {
   "Cache-Control": "private, no-store",
@@ -194,6 +196,7 @@ async function owned(
   ).results;
   return { ...order, lines };
 }
+export { owned as readOwnedCheckoutOrder };
 export async function loadCheckoutConfirmation(
   request: Request,
   env: Env,
@@ -338,10 +341,23 @@ export async function loadCheckoutOrder(
     );
     const order = await owned(env.DB, session.context, id);
     if (!order) return inaccessible();
+    const stripeConfig = stripeRuntimeConfig(request, env);
+    const stripe = stripeConfig
+      ? await readOwnedStripePayment(
+          env.DB,
+          stripeConfig.provider,
+          session.context.ownerHash,
+          id,
+        )
+      : null;
     return json({
       csrfToken: session.csrfToken,
       order,
-      canPreparePayment: checkoutPaymentPreparationEnabled(request, env),
+      canPreparePayment:
+        !stripeConfig && checkoutPaymentPreparationEnabled(request, env),
+      stripe: stripe
+        ? { ...stripe, canStart: stripe.canStart && stripeConfig!.canStart }
+        : null,
     });
   } catch (error) {
     if (error instanceof CheckoutSessionError && error.code !== "unavailable")

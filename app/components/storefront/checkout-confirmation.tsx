@@ -331,8 +331,8 @@ export function CheckoutConfirmation({
                 <CheckoutAmounts quote={validQuote} />
                 <p>
                   Reservation ends at{" "}
-                  {new Date(validQuote.expiresAt).toLocaleTimeString()}. No
-                  payment is configured.
+                  {new Date(validQuote.expiresAt).toLocaleTimeString()}. This
+                  confirmation does not take payment.
                 </p>
                 {validQuote.expiresAt <= now && !uncertain && (
                   <p role="status">

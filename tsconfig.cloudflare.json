@@ -7,6 +7,7 @@
     "scripts/commerce-places-config.mjs",
     "scripts/commerce-expiry-driver.mjs",
     "scripts/commerce-local-config.mjs",
+    "scripts/commerce-stripe-config.mjs",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {

@@ -43,7 +43,11 @@ function button(text: string) {
 async function click(element: HTMLElement) {
   await act(async () => element.click());
 }
-async function mount(status = false, canPreparePayment = false) {
+async function mount(
+  status = false,
+  canPreparePayment = false,
+  stripeEnabled = false,
+) {
   const router = createMemoryRouter(
     [
       {
@@ -64,6 +68,11 @@ async function mount(status = false, canPreparePayment = false) {
             csrfToken={"c".repeat(64)}
             refresh={() => {}}
             canPreparePayment={canPreparePayment}
+            stripe={
+              stripeEnabled
+                ? { state: "not_started", canStart: true, canQuery: false }
+                : null
+            }
           />
         ) : (
           <p>Private order page</p>
@@ -218,10 +227,8 @@ describe("final fictional order confirmation and private status UI", () => {
         }),
       ),
     );
-    expect(host.textContent).toContain("Test payment preparation recorded");
-    expect(host.textContent).toContain(
-      "No provider payment request has been sent",
-    );
+    expect(host.textContent).toContain("Test payment attempt recorded");
+    expect(host.textContent).toContain("no active provider connection");
     expect(host.textContent).toContain("Stock stays protected");
     expect(button("Cancel unpaid")).toBeUndefined();
     expect(button("Prepare Stripe")).toBeUndefined();
@@ -250,8 +257,16 @@ describe("final fictional order confirmation and private status UI", () => {
     const retry = fetcher.mock.calls[1][1]!.body as URLSearchParams;
     expect(retry.toString()).toBe(original.toString());
     expect(host.querySelector('[role="alert"]')).toBeNull();
-    expect(host.textContent).toContain(
-      "No provider payment request has been sent",
+    expect(host.textContent).toContain("no active provider connection");
+  });
+  it("removes the Stripe control after an unpaid cancellation instead of keeping its stale start projection", async () => {
+    fetcher.mockResolvedValueOnce(
+      Response.json({ order: { ...order, state: "cancelled", version: 2 } }),
     );
+    await mount(true, false, true);
+    expect(button("Pay with Stripe")).toBeDefined();
+    await click(button("Cancel unpaid"));
+    expect(host.textContent).toContain("Test order cancelled");
+    expect(button("Pay with Stripe")).toBeUndefined();
   });
 });

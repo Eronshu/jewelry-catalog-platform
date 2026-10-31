@@ -23,7 +23,7 @@ const paymentNames: Record<string, string> = {
   not_started: "Not started",
   processing: "Payment preparation recorded",
   unknown: "Unknown — needs review",
-  succeeded: "Success recorded — needs reconciliation",
+  succeeded: "Test payment confirmed",
   failed: "Failure recorded — needs review",
 };
 const fulfillmentNames: Record<string, string> = {
@@ -73,6 +73,13 @@ function Facts({ order }: { order: WorkspaceOrder }) {
 }
 function PaymentNotice({ order }: { order: WorkspaceOrder }) {
   if (!order.hasPaymentAttempt) return null;
+  if (order.paymentState === "succeeded")
+    return (
+      <p className="commerce-workspace-notice">
+        Test payment is recorded and stock is allocated to this order. These are
+        fictional items and test funds; this does not authorize a real shipment.
+      </p>
+    );
   return (
     <p className="commerce-workspace-notice">
       A payment attempt is recorded. This is not proof of payment. Ordinary
