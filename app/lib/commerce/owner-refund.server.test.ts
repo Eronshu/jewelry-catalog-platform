@@ -22,7 +22,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { applyStockCommand } from "./inventory.server";
+import { applyStockCommand, commandHash } from "./inventory.server";
 import { createTestQuote, reserveTestOrder } from "./orders.server";
 import {
   issueTestCheckoutQuote,
@@ -61,7 +61,7 @@ const worker = {
   accountRef: trusted.accountRef,
   workerId: "22222222-2222-4222-8222-222222222222",
 };
-const migrationName = "0026_commerce_owner_stripe_refunds.sql";
+const migrationName = "0027_commerce_owner_paypal_refunds.sql";
 const migration = () =>
   readFileSync(join(root, "migrations", migrationName), "utf8");
 let directory: string,
@@ -144,16 +144,16 @@ async function seedScope() {
 }
 beforeAll(() => {
   directory = mkdtempSync(join(tmpdir(), "owned-payment-start-"));
-  baseline = join(directory, "baseline-0025");
+  baseline = join(directory, "baseline-0026");
   mkdirSync(baseline);
   const oldMigrations = join(baseline, "migrations");
   mkdirSync(oldMigrations);
   for (const file of readdirSync(join(root, "migrations")).filter(
-    (file) => file.endsWith(".sql") && file < "0026",
+    (file) => file.endsWith(".sql") && file < "0027",
   ))
     copyFileSync(join(root, "migrations", file), join(oldMigrations, file));
   migrate(baseline, configuration(baseline, oldMigrations));
-  upgraded = join(directory, "upgraded-0026");
+  upgraded = join(directory, "upgraded-0027");
   mkdirSync(upgraded);
   cpSync(join(baseline, "state"), join(upgraded, "state"), { recursive: true });
   migrate(upgraded, configuration(upgraded, join(root, "migrations")));
@@ -345,7 +345,7 @@ async function upgrade(sql = migration()) {
   const migrations = join(current, "upgrade-migrations");
   mkdirSync(migrations);
   for (const file of readdirSync(join(root, "migrations")).filter(
-    (file) => file.endsWith(".sql") && file < "0026",
+    (file) => file.endsWith(".sql") && file < "0027",
   ))
     copyFileSync(join(root, "migrations", file), join(migrations, file));
   writeFileSync(join(migrations, migrationName), sql);
@@ -746,6 +746,8 @@ import {
   startOwnerStripeRefund,
   reconcileOwnerStripeRefund,
   lookupOwnerRefundCommand,
+  startOwnerPayPalRefund,
+  reconcileOwnerPayPalRefund,
 } from "./owner-refund.server";
 import type { OwnerRefundInput } from "./owner-refund";
 const refundInput = async (orderId: string): Promise<OwnerRefundInput> => ({
@@ -842,29 +844,188 @@ const query = (i: OwnerRefundInput, fetcher: StripeSandboxFetch) =>
     fetcher,
     () => now + 60000,
   );
+async function seedRefund26(
+  orderId: string,
+  status: "pending" | "succeeded",
+): Promise<OwnerRefundInput> {
+  const o = await db
+    .prepare("SELECT version FROM commerce_orders WHERE id=?")
+    .bind(orderId)
+    .first<{ version: number }>();
+  const i: OwnerRefundInput = {
+    requestId: crypto.randomUUID(),
+    orderId,
+    expectedVersion: o!.version,
+    acknowledge: true,
+  };
+  const actorHash = await commandHash([
+      "owner-refund-actor-v1",
+      actor.email,
+      actor.sub,
+    ]),
+    requestHash = await commandHash(["owner-refund-v1", scope, actorHash, i]);
+  await db
+    .prepare(
+      `INSERT INTO commerce_owner_refund_intents(request_id,mode,instance_id,actor_hash,request_hash,order_id,capture_id,expected_version,operation_key,account_ref,canonical_origin,charge_id,payment_intent_id,session_id,payment_request_id,create_operation_key,amount_cents,recorded_at)
+   SELECT ?,mode,instance_id,?,?,order_id,capture_id,version,?,account_ref,canonical_origin,charge_id,payment_intent_id,session_id,payment_request_id,create_operation_key,amount_cents,? FROM commerce_owner_refund_sources WHERE order_id=?`,
+    )
+    .bind(
+      i.requestId,
+      actorHash,
+      requestHash,
+      i.requestId,
+      now + 50000,
+      orderId,
+    )
+    .run();
+  await db
+    .prepare(
+      "INSERT INTO commerce_owner_refund_dispatches(request_id,dispatch_id,recorded_at) VALUES(?,?,?)",
+    )
+    .bind(i.requestId, crypto.randomUUID(), now + 50000)
+    .run();
+  // Two observations also verify that original row ordering survives rebuilding.
+  for (const observed of ["pending", status])
+    await db
+      .prepare(
+        `INSERT INTO commerce_owner_refund_observations(observation_id,request_id,refund_id,status,amount_cents,refunded_cents,recorded_at) SELECT ?,request_id,?,?,amount_cents,CASE WHEN ?='succeeded' THEN amount_cents ELSE 0 END,? FROM commerce_owner_refund_intents WHERE request_id=?`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        `re_${i.requestId.replaceAll("-", "")}`,
+        observed,
+        observed,
+        now + 50001,
+        i.requestId,
+      )
+      .run();
+  return i;
+}
 describe("owner one-shot Stripe test refund on real local D1", () => {
-  // This scenario seeds both providers and restarts D1 around a real migration.
-  // Give only this upgrade drill a bounded integration budget on shared CI.
-  it("upgrades populated 0025 financial and packing/handoff history without changing rows or foreign keys", async () => {
+  it("upgrades populated 0026 Stripe refund/history with exact mappings, observation rowids, FK integrity and locks", async () => {
     await selectBaseline();
     await legacyHistory();
-    const a = await paid();
-    const b = await paid("pickup", false, true);
+    const a = await paid(),
+      b = await paid(),
+      c = await paid("pickup", false, true);
     await apply(await request(a.orderId));
-    await apply(await request(a.orderId, "ship"));
-    await apply(await request(b.orderId));
-    const before = await allHistory();
+    await apply(await request(c.orderId));
+    const first = await seedRefund26(a.orderId, "pending"),
+      second = await seedRefund26(b.orderId, "succeeded");
+    const before = await allHistory(),
+      beforeObservations = (
+        await db
+          .prepare(
+            "SELECT rowid,* FROM commerce_owner_refund_observations ORDER BY rowid",
+          )
+          .all()
+      ).results;
     await upgrade();
     const after = await allHistory();
-    for (const [k, v] of Object.entries(before)) expect(after[k], k).toEqual(v);
+    for (const [k, v] of Object.entries(before)) {
+      if (k === "commerce_owner_refund_intents")
+        expect(after[k]).toEqual(
+          (v as Record<string, unknown>[]).map((row) => {
+            const { charge_id, payment_intent_id, session_id, ...rest } = row;
+            return {
+              ...rest,
+              provider: "stripe",
+              transaction_ref: charge_id,
+              payment_intent_ref: payment_intent_id,
+              provider_object_ref: session_id,
+            };
+          }),
+        );
+      else expect(after[k], k).toEqual(v);
+    }
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT rowid,* FROM commerce_owner_refund_observations ORDER BY rowid",
+          )
+          .all()
+      ).results,
+    ).toEqual(beforeObservations);
     expect(
       (await db.prepare("PRAGMA foreign_key_check").all()).results,
     ).toEqual([]);
-    expect((await readOwnerRefund(db, scope, a.orderId))!.canStart).toBe(true);
-    expect((await readOwnerRefund(db, scope, b.orderId))!).toMatchObject({
-      provider: "paypal",
-      canStart: false,
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT name FROM sqlite_schema WHERE name LIKE '%backup_0027%'",
+          )
+          .all()
+      ).results,
+    ).toEqual([]);
+    expect(
+      await lookupOwnerRefundCommand(db, scope, actor, first),
+    ).toMatchObject({ state: "recorded", receipt: { state: "pending" } });
+    expect(
+      await lookupOwnerRefundCommand(db, scope, actor, second),
+    ).toMatchObject({ state: "recorded", receipt: { state: "succeeded" } });
+    expect(await readOwnerFulfillment(db, scope, a.orderId)).toMatchObject({
+      canPack: false,
+      canHandoff: false,
     });
+    expect(await readOwnerRefund(db, scope, c.orderId)).toMatchObject({
+      provider: "paypal",
+      canStart: true,
+    });
+    const source = await db
+      .prepare(
+        "SELECT sql FROM sqlite_schema WHERE name='commerce_owner_fulfillment_orders'",
+      )
+      .first<{ sql: string }>();
+    const old = readFileSync(
+      join(root, "migrations/0026_commerce_owner_stripe_refunds.sql"),
+      "utf8",
+    );
+    expect(source!.sql).toBe(
+      old
+        .slice(
+          old.indexOf("CREATE VIEW commerce_owner_fulfillment_orders"),
+          old.indexOf("CREATE TRIGGER commerce_owner_refund_intents_no_update"),
+        )
+        .trim()
+        .replace(/;$/, ""),
+    );
+  }, 30000);
+  it("rolls back a failed 0027 rebuild to populated 0026 schema, rows and immutable fences", async () => {
+    await selectBaseline();
+    const a = await paid();
+    await seedRefund26(a.orderId, "pending");
+    const before = await allHistory();
+    const schema = (
+      await db
+        .prepare(
+          "SELECT type,name,sql FROM sqlite_schema WHERE name LIKE 'commerce_%' ORDER BY name",
+        )
+        .all()
+    ).results;
+    await expect(
+      upgrade(
+        migration() +
+          "\nINSERT INTO commerce_owner_refund_intents(request_id) VALUES('broken');",
+      ),
+    ).rejects.toThrow();
+    expect(await allHistory()).toEqual(before);
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT type,name,sql FROM sqlite_schema WHERE name LIKE 'commerce_%' ORDER BY name",
+          )
+          .all()
+      ).results,
+    ).toEqual(schema);
+    expect(
+      (await db.prepare("PRAGMA foreign_key_check").all()).results,
+    ).toEqual([]);
+    await expect(
+      db.prepare("DELETE FROM commerce_owner_refund_intents").run(),
+    ).rejects.toThrow();
   }, 30000);
   it("records a full refund only after fresh GET evidence and leaves capture/order/stock unchanged", async () => {
     const item = await paid(),
@@ -1145,5 +1306,296 @@ describe("owner one-shot Stripe test refund on real local D1", () => {
           .run(),
       ).rejects.toThrow();
     }
+  });
+});
+
+async function paypalRefundProvider(orderId: string) {
+  const p = await paypalProvider(orderId);
+  p.state.status = "COMPLETED";
+  const amount = (await readOwnerRefund(db, scope, orderId))!.amountCents,
+    money = { currency_code: "CAD", value: (amount / 100).toFixed(2) };
+  const state = {
+    postCount: 0,
+    status: "COMPLETED",
+    losePost: false,
+    refundId: "R22222222222222222",
+    customId: "",
+    wrong: false,
+  };
+  const refund = () => ({
+    id: state.refundId,
+    status: state.status,
+    custom_id: state.wrong ? "wrong" : state.customId,
+    amount: money,
+    payer: { merchant_id: paypalConfig.expectedMerchantId },
+    links: [
+      {
+        rel: "up",
+        method: "GET",
+        href: `https://api-m.sandbox.paypal.com/v2/payments/captures/${p.captureId}`,
+      },
+    ],
+  });
+  const call = vi.fn<PayPalSandboxFetch>(async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === `/v2/payments/captures/${p.captureId}/refund`) {
+      state.postCount++;
+      const body = JSON.parse(init.body as string) as {
+        amount: unknown;
+        custom_id: string;
+      };
+      expect(body.amount).toEqual(money);
+      state.customId = body.custom_id;
+      expect(new Headers(init.headers).get("PayPal-Request-Id")).toBe(
+        state.customId.slice(-36),
+      );
+      if (state.losePost) throw new Error("Synthetic committed refund lost");
+      return Response.json(refund());
+    }
+    if (path === `/v2/payments/refunds/${state.refundId}`)
+      return Response.json(refund());
+    p.state.refunded = state.postCount > 0 && state.status === "COMPLETED";
+    const response = await p.call(url, init);
+    if (path === `/v2/checkout/orders/${p.providerOrderId}`) {
+      const order = (await response.json()) as {
+        purchase_units: Array<{ payments: { refunds: unknown[] } }>;
+      };
+      order.purchase_units[0].payments.refunds = state.postCount
+        ? [refund()]
+        : [];
+      return Response.json(order);
+    }
+    return response;
+  });
+  return { state, call, p, amount };
+}
+const startPayPal = (
+  i: OwnerRefundInput,
+  fetcher: PayPalSandboxFetch,
+  database = db,
+  hook?: () => Promise<void>,
+) =>
+  startOwnerPayPalRefund(
+    database,
+    scope,
+    actor,
+    i,
+    paypalConfig,
+    fetcher,
+    () => now + 50000,
+    hook,
+  );
+const queryPayPal = (i: OwnerRefundInput, fetcher: PayPalSandboxFetch) =>
+  reconcileOwnerPayPalRefund(
+    db,
+    scope,
+    actor,
+    i,
+    paypalConfig,
+    fetcher,
+    () => now + 60000,
+  );
+async function refundedEvent(orderId: string, providerOrderId: string) {
+  await db
+    .prepare(
+      `INSERT INTO commerce_owned_paypal_events(event_type,event_id,attempt_command_id,provider_order_id,payload_hash,recorded_at) SELECT 'PAYMENT.CAPTURE.REFUNDED',?,command_id,?,?,? FROM commerce_payment_attempts WHERE order_id=?`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      providerOrderId,
+      "b".repeat(64),
+      now + 55000,
+      orderId,
+    )
+    .run();
+}
+describe("owner one-shot PayPal full refund on the shared ledger", () => {
+  it("refunds exact nonzero-tax CAD total once with real PayPal associations and no stock/order/capture history changes", async () => {
+    const item = await paid("shipping", false, true),
+      i = await refundInput(item.orderId),
+      p = await paypalRefundProvider(item.orderId),
+      before = await allHistory();
+    expect(p.amount).toBe(4406);
+    expect(await startPayPal(i, p.call)).toMatchObject({
+      state: "succeeded",
+      amountCents: 4406,
+      refundedCents: 4406,
+    });
+    const after = await allHistory();
+    for (const [k, v] of Object.entries(before))
+      if (!k.startsWith("commerce_owner_refund_"))
+        expect(after[k], k).toEqual(v);
+    expect((await rows("commerce_owner_refund_intents"))[0]).toMatchObject({
+      provider: "paypal",
+      payment_intent_ref: null,
+      transaction_ref: p.p.captureId,
+      provider_object_ref: p.p.providerOrderId,
+      operation_key: i.requestId,
+    });
+    expect(await startPayPal(i, p.call)).toMatchObject({ state: "succeeded" });
+    expect(p.state.postCount).toBe(1);
+    expect(await readOwnerFulfillment(db, scope, item.orderId)).toMatchObject({
+      canPack: false,
+      canHandoff: false,
+    });
+  });
+  it("concurrent clicks create one immutable intent/dispatch and one refund POST; another UUID is permanently blocked", async () => {
+    const item = await paid("pickup", false, true),
+      i = await refundInput(item.orderId),
+      p = await paypalRefundProvider(item.orderId);
+    await Promise.all([startPayPal(i, p.call), startPayPal(i, p.call)]);
+    expect(p.state.postCount).toBe(1);
+    await expect(
+      startPayPal({ ...i, requestId: crypto.randomUUID() }, p.call),
+    ).rejects.toMatchObject({ code: "conflict" });
+  });
+  it.each(["intents", "dispatches"])(
+    "lost %s acknowledgment never authorizes external HTTP",
+    async (table) => {
+      const item = await paid("shipping", false, true),
+        i = await refundInput(item.orderId),
+        p = await paypalRefundProvider(item.orderId);
+      await startPayPal(
+        i,
+        p.call,
+        faultDatabase(
+          (sql) => sql.includes(`INSERT INTO commerce_owner_refund_${table}`),
+          "after",
+        ),
+      );
+      expect(p.call).not.toHaveBeenCalled();
+      await startPayPal(i, p.call);
+      expect(p.call).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["PENDING", "FAILED", "CANCELLED"])(
+    "keeps %s result and permanent fulfillment lock with query-only recovery",
+    async (status) => {
+      const item = await paid("shipping", false, true),
+        i = await refundInput(item.orderId),
+        p = await paypalRefundProvider(item.orderId);
+      p.state.status = status;
+      expect(await startPayPal(i, p.call)).toMatchObject({
+        state: status === "PENDING" ? "pending" : "review_required",
+        refundedCents: 0,
+      });
+      expect(await readOwnerFulfillment(db, scope, item.orderId)).toMatchObject(
+        { canPack: false, canHandoff: false },
+      );
+      p.state.status = "COMPLETED";
+      expect(await queryPayPal(i, p.call)).toMatchObject({
+        state: "succeeded",
+      });
+      expect(p.state.postCount).toBe(1);
+    },
+  );
+  it("unknown POST response recovers the original refund even after a genuine refunded event removes CREATE eligibility", async () => {
+    const item = await paid("shipping", false, true),
+      i = await refundInput(item.orderId),
+      p = await paypalRefundProvider(item.orderId);
+    p.state.losePost = true;
+    expect(await startPayPal(i, p.call)).toMatchObject({
+      state: "review_required",
+    });
+    await refundedEvent(item.orderId, p.p.providerOrderId);
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT * FROM commerce_owner_refund_sources WHERE order_id=?",
+          )
+          .bind(item.orderId)
+          .all()
+      ).results,
+    ).toEqual([]);
+    expect(await queryPayPal(i, p.call)).toMatchObject({ state: "succeeded" });
+    expect(p.state.postCount).toBe(1);
+  });
+  it("rejects merchant/origin mismatch and cross-provider execution before provider requests", async () => {
+    const item = await paid("shipping", false, true),
+      i = await refundInput(item.orderId),
+      p = await paypalRefundProvider(item.orderId);
+    for (const changed of [
+      { ...paypalConfig, expectedMerchantId: "3333333333333" },
+      { ...paypalConfig, canonicalOrigin: "http://127.0.0.1:8792" },
+    ])
+      await expect(
+        startOwnerPayPalRefund(db, scope, actor, i, changed, p.call),
+      ).rejects.toMatchObject({ code: "conflict" });
+    await expect(start(i, p.call)).rejects.toMatchObject({ code: "conflict" });
+    expect(p.call).not.toHaveBeenCalled();
+    p.p.state.wrongMerchant = true;
+    expect(await startPayPal(i, p.call)).toMatchObject({
+      state: "review_required",
+    });
+    expect(p.state.postCount).toBe(0);
+  });
+  it("reauthorizes immediately after provider OAuth/GET and rejects a changed current scope before POST", async () => {
+    const item = await paid("shipping", false, true),
+      i = await refundInput(item.orderId),
+      p = await paypalRefundProvider(item.orderId);
+    const revoked = new Error("Synthetic revoked authorization");
+    await expect(
+      startPayPal(i, p.call, db, async () => {
+        if (p.call.mock.calls.length) throw revoked;
+      }),
+    ).rejects.toBe(revoked);
+    expect(p.state.postCount).toBe(0);
+    const other = await paid("pickup", false, true),
+      j = await refundInput(other.orderId),
+      q = await paypalRefundProvider(other.orderId);
+    let changed = false;
+    await expect(
+      startPayPal(j, q.call, db, async () => {
+        if (q.call.mock.calls.length && !changed) {
+          changed = true;
+          await db
+            .prepare("DROP TRIGGER commerce_payment_scope_no_update")
+            .run();
+          await db
+            .prepare(
+              "UPDATE commerce_payment_scope SET instance_id=? WHERE id=1",
+            )
+            .bind(crypto.randomUUID())
+            .run();
+        }
+      }),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    expect(q.state.postCount).toBe(0);
+  });
+  it("handoff races reject stale refund and completed handoff refunds never restock", async () => {
+    const item = await paid("shipping", false, true);
+    await apply(await request(item.orderId));
+    const i = await refundInput(item.orderId),
+      p = await paypalRefundProvider(item.orderId);
+    let handed = false;
+    await expect(
+      startPayPal(i, p.call, db, async () => {
+        if (!handed) {
+          handed = true;
+          await apply(await request(item.orderId, "ship"));
+        }
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(p.call).not.toHaveBeenCalled();
+    const stock = await balance(item.variantId);
+    expect(
+      await startPayPal(await refundInput(item.orderId), p.call),
+    ).toMatchObject({ state: "succeeded" });
+    expect(await balance(item.variantId)).toEqual(stock);
+  });
+  it("mismatched canonical refund cannot finalize, change the original key or retry mutation", async () => {
+    const item = await paid("shipping", false, true),
+      i = await refundInput(item.orderId),
+      p = await paypalRefundProvider(item.orderId);
+    p.state.wrong = true;
+    expect(await startPayPal(i, p.call)).toMatchObject({
+      state: "review_required",
+    });
+    expect(await queryPayPal(i, p.call)).toMatchObject({
+      state: "review_required",
+    });
+    expect(p.state.postCount).toBe(1);
+    expect(await rows("commerce_owner_refund_observations")).toEqual([]);
   });
 });

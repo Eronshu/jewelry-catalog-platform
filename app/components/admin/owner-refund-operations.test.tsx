@@ -157,10 +157,10 @@ it("blocks before dispatch if storage is corrupt or cannot preserve the request"
   expect(send).not.toHaveBeenCalled();
   expect(sessionStorage.getItem(key)).toBe("broken");
 });
-it("shows no refund start for PayPal, confirmed refunds or ineligible orders", async () => {
-  await render({ ...detail, provider: "paypal", canStart: false });
+it("shows no refund start for missing captures, confirmed refunds or ineligible orders", async () => {
+  await render({ ...detail, provider: null, canStart: false });
   expect(button("Refund full test amount")).toBeUndefined();
-  expect(document.body.textContent).toContain("no eligible Stripe capture");
+  expect(document.body.textContent).toContain("no eligible online capture");
   await render({
     ...detail,
     state: "succeeded",
@@ -170,5 +170,33 @@ it("shows no refund start for PayPal, confirmed refunds or ineligible orders", a
     refundedCents: 4400,
   });
   expect(button("Refund full test amount")).toBeUndefined();
+  expect(document.body.textContent).toContain("Full test refund verified");
+});
+
+it("uses the original PayPal payment and the same one-shot request recovery", async () => {
+  send.mockResolvedValue(Response.json({ state: "recorded", receipt }));
+  await render({ ...detail, provider: "paypal" });
+  expect(document.body.textContent).toContain("entire original PayPal capture");
+  await confirm();
+  await act(async () => {
+    button("Refund full test amount").click();
+    button("Refund full test amount").click();
+  });
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).toContain("Refund pending with PayPal");
+  expect(button("Check PayPal refund status")).toBeDefined();
+  expect(button("Check Stripe refund status")).toBeUndefined();
+  send.mockResolvedValueOnce(
+    Response.json({
+      state: "recorded",
+      receipt: { ...receipt, state: "succeeded", refundedCents: 4400 },
+    }),
+  );
+  await act(async () => button("Check PayPal refund status").click());
+  const form = new URLSearchParams(String(send.mock.calls[1][1]?.body));
+  expect(form.get("intent")).toBe("query");
+  expect(form.get("requestId")).toBe(requestId);
+  expect(form.has("provider")).toBe(false);
+  expect(sessionStorage.getItem(key)).toBeNull();
   expect(document.body.textContent).toContain("Full test refund verified");
 });

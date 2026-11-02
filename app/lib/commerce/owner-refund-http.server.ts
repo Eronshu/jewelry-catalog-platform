@@ -3,6 +3,7 @@ import { cloudflareContext } from "../../cloudflare-context";
 import { requireAdmin } from "../auth/admin-access.server";
 import { checkoutConfig } from "./checkout-config.server";
 import { stripeRuntimeConfig } from "./stripe-runtime-config.server";
+import { paypalRuntimeConfig } from "./paypal-runtime-config.server";
 import type { StripeSandboxFetch } from "./stripe-sandbox.server";
 import { workspaceHeaders } from "./workspace.server";
 import { readCommerceForm } from "./request.server";
@@ -11,6 +12,8 @@ import {
   readOwnerRefund,
   startOwnerStripeRefund,
   reconcileOwnerStripeRefund,
+  startOwnerPayPalRefund,
+  reconcileOwnerPayPalRefund,
   lookupOwnerRefundCommand,
 } from "./owner-refund.server";
 import type { OwnerRefundDetail, OwnerRefundInput } from "./owner-refund";
@@ -136,36 +139,93 @@ export async function actOwnerRefundPage(
     const isStart = form.get("intent") === "start";
     if (isStart ? !initial.canWrite : !initial.canQuery)
       throw new Response(null, { status: 503 });
-    const config = stripeRuntimeConfig(request, initial.env);
-    if (!config) throw new Response(null, { status: 503 });
-    const authorize = async () => {
-      const current = boundary(request, context);
-      if (isStart ? !current.canWrite : !current.canQuery)
-        throw new Response(null, { status: 503 });
-      const fresh = stripeRuntimeConfig(request, current.env);
-      if (
-        !fresh ||
-        fresh.provider.expectedAccountId !==
-          config.provider.expectedAccountId ||
-        fresh.provider.testSecretKey !== config.provider.testSecretKey ||
-        fresh.provider.canonicalOrigin !== config.provider.canonicalOrigin
-      )
-        throw new Response(null, { status: 503 });
-    };
-    await authorize();
-    const operation = isStart
-      ? startOwnerStripeRefund
-      : reconcileOwnerStripeRefund;
-    const receipt = await operation(
+    // Select the original order's provider on the server, never from form data.
+    // With neither explicit opt-in, deny before even reading refund history.
+    if (
+      Object.getOwnPropertyDescriptor(initial.env, "COMMERCE_STRIPE_SANDBOX")
+        ?.value !== "local-test" &&
+      Object.getOwnPropertyDescriptor(initial.env, "COMMERCE_PAYPAL_SANDBOX")
+        ?.value !== "local-test"
+    )
+      throw new Response(null, { status: 503 });
+    const detail = await readOwnerRefund(
       initial.env.DB,
       initial.scope,
-      initial.actor,
-      input,
-      config.provider,
-      fetcher,
-      Date.now,
-      authorize,
+      orderId,
     );
+    if (!detail) throw new OwnerRefundError("not_found");
+    const authorizeActor = () => {
+      const current = boundary(request, context);
+      if (
+        (isStart ? !current.canWrite : !current.canQuery) ||
+        current.actor.email !== initial.actor.email ||
+        current.actor.sub !== initial.actor.sub ||
+        current.scope.instanceId !== initial.scope.instanceId
+      )
+        throw new Response(null, { status: 503 });
+      return current;
+    };
+    let receipt;
+    if (detail.provider === "stripe") {
+      const config = stripeRuntimeConfig(request, initial.env);
+      if (!config) throw new Response(null, { status: 503 });
+      const authorize = async () => {
+        const current = authorizeActor();
+        const fresh = stripeRuntimeConfig(request, current.env);
+        if (
+          !fresh ||
+          fresh.provider.expectedAccountId !==
+            config.provider.expectedAccountId ||
+          fresh.provider.testSecretKey !== config.provider.testSecretKey ||
+          fresh.provider.canonicalOrigin !== config.provider.canonicalOrigin ||
+          fresh.provider.instanceId !== config.provider.instanceId
+        )
+          throw new Response(null, { status: 503 });
+      };
+      await authorize();
+      receipt = await (
+        isStart ? startOwnerStripeRefund : reconcileOwnerStripeRefund
+      )(
+        initial.env.DB,
+        initial.scope,
+        initial.actor,
+        input,
+        config.provider,
+        fetcher,
+        Date.now,
+        authorize,
+      );
+    } else if (detail.provider === "paypal") {
+      const config = paypalRuntimeConfig(request, initial.env);
+      if (!config) throw new Response(null, { status: 503 });
+      const authorize = async () => {
+        const current = authorizeActor();
+        const fresh = paypalRuntimeConfig(request, current.env);
+        if (
+          !fresh ||
+          fresh.provider.expectedMerchantId !==
+            config.provider.expectedMerchantId ||
+          fresh.provider.clientId !== config.provider.clientId ||
+          fresh.provider.clientSecret !== config.provider.clientSecret ||
+          fresh.provider.canonicalOrigin !== config.provider.canonicalOrigin ||
+          fresh.provider.instanceId !== config.provider.instanceId
+        )
+          throw new Response(null, { status: 503 });
+      };
+      await authorize();
+      receipt = await (
+        isStart ? startOwnerPayPalRefund : reconcileOwnerPayPalRefund
+      )(
+        initial.env.DB,
+        initial.scope,
+        initial.actor,
+        input,
+        config.provider,
+        fetcher,
+        Date.now,
+        authorize,
+      );
+    } else throw new OwnerRefundError("conflict");
     return json({ state: "recorded", receipt });
   } catch (error) {
     return reject(error);

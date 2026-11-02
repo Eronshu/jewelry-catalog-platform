@@ -14,10 +14,25 @@ const uuid =
 const labels: Record<OwnerRefundState, string> = {
   not_started: "No refund request recorded",
   prepared: "Refund request saved — result not verified",
-  pending: "Refund pending with Stripe",
+  pending: "Refund pending with payment provider",
   succeeded: "Full test refund verified",
   review_required: "Refund needs review — do not issue another",
 };
+function providerName(provider: OwnerRefundPage["detail"]["provider"]) {
+  return provider === "stripe"
+    ? "Stripe"
+    : provider === "paypal"
+      ? "PayPal"
+      : "payment provider";
+}
+function statusLabel(
+  state: OwnerRefundState,
+  provider: OwnerRefundPage["detail"]["provider"],
+) {
+  return state === "pending"
+    ? `Refund pending with ${providerName(provider)}`
+    : labels[state];
+}
 function original(key: string, detail: OwnerRefundPage["detail"]) {
   try {
     const raw = sessionStorage.getItem(key);
@@ -66,9 +81,9 @@ export function OwnerRefundOperations(props: Props) {
       <section className="admin-panel owner-stock-operations">
         <h1>Test refund</h1>
         <p>
-          <strong>Local Stripe Sandbox only.</strong> This test returns
-          fictional funds to the original test payment method. It does not set
-          the store's real refund policy.
+          <strong>Local Stripe and PayPal Sandbox only.</strong> This test
+          returns fictional funds to the original test payment method. It does
+          not set the store's real refund policy.
         </p>
         <p className="commerce-workspace-reference">{props.detail.orderId}</p>
         {hydrated ? (
@@ -183,7 +198,8 @@ function Controls({
         throw Error();
       setReceipt(r);
       setMessage(
-        labels[r.state] + ". Stock has not been returned or released.",
+        statusLabel(r.state, detail.provider) +
+          ". Stock has not been returned or released.",
       );
       if (r.state === "succeeded") {
         try {
@@ -243,7 +259,7 @@ function Controls({
       <dl className="commerce-workspace-facts">
         <div>
           <dt>Refund status</dt>
-          <dd>{labels[current.state]}</dd>
+          <dd>{statusLabel(current.state, detail.provider)}</dd>
         </div>
         <div>
           <dt>Original captured amount</dt>
@@ -255,18 +271,18 @@ function Controls({
         </div>
       </dl>
       <p>
-        This first test action refunds the entire original Stripe capture,
-        including the saved test delivery and tax amount. Partial refunds and
-        PayPal refunds are separate upcoming work.
+        This test action refunds the entire original{" "}
+        {providerName(detail.provider)} capture, including the saved test
+        delivery and tax amount. Partial refunds are separate upcoming work.
       </p>
       <p>
         A recorded request stops further packing and handoff. Refunding money
         never automatically adds stock back or releases allocated stock;
         inspection and stock disposition are separate actions.
       </p>
-      {detail.provider !== "stripe" && (
+      {!detail.provider && (
         <p role="status">
-          This order has no eligible Stripe capture. No refund can be started
+          This order has no eligible online capture. No refund can be started
           here.
         </p>
       )}
@@ -319,7 +335,7 @@ function Controls({
               disabled={busy || blocked || !canQuery}
               onClick={() => void perform(pending, "query")}
             >
-              Check Stripe refund status
+              Check {providerName(detail.provider)} refund status
             </button>
           </div>
         </section>

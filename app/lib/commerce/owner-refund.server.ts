@@ -17,6 +17,14 @@ import {
   type StripeSandboxRefundAssociation,
   type StripeSandboxRefund,
 } from "./stripe-refund-sandbox.server";
+import type {
+  PayPalSandboxConfig,
+  PayPalSandboxFetch,
+} from "./paypal-sandbox.server";
+import {
+  createPayPalSandboxRefund,
+  retrievePayPalSandboxRefund,
+} from "./paypal-refund-sandbox.server";
 export class OwnerRefundError extends Error {
   constructor(
     public readonly code:
@@ -120,11 +128,12 @@ type Saved = {
   capture_id: string;
   expected_version: number;
   operation_key: string;
+  provider: "stripe" | "paypal";
   account_ref: string;
   canonical_origin: string;
-  charge_id: string;
-  payment_intent_id: string;
-  session_id: string;
+  transaction_ref: string;
+  payment_intent_ref: string | null;
+  provider_object_ref: string;
   payment_request_id: string;
   create_operation_key: string;
   amount_cents: number;
@@ -334,17 +343,100 @@ function association(r: Saved): StripeSandboxRefundAssociation {
     requestId: r.request_id,
     operationKey: r.operation_key,
     captureId: r.capture_id,
-    chargeId: r.charge_id,
-    paymentIntentId: r.payment_intent_id,
+    chargeId: r.transaction_ref,
+    paymentIntentId: r.payment_intent_ref!,
     amountCents: r.amount_cents,
   };
 }
-function configured(r: Saved, c: StripeSandboxConfig) {
+type RefundAdapter = {
+  provider: "stripe" | "paypal";
+  accountRef: string;
+  canonicalOrigin: string;
+  create: (r: Saved, guard: () => Promise<void>) => Promise<string>;
+  retrieve: (
+    r: Saved,
+    knownId: string | null,
+  ) => Promise<StripeSandboxRefund | null>;
+};
+function configured(r: Saved, c: RefundAdapter) {
   if (
-    r.account_ref !== c.expectedAccountId ||
+    r.provider !== c.provider ||
+    r.account_ref !== c.accountRef ||
     r.canonical_origin !== c.canonicalOrigin
   )
     fail("conflict");
+}
+function stripeAdapter(
+  c: StripeSandboxConfig,
+  fetcher: StripeSandboxFetch,
+): RefundAdapter {
+  return {
+    provider: "stripe",
+    accountRef: c.expectedAccountId,
+    canonicalOrigin: c.canonicalOrigin,
+    create: (r, guard) =>
+      createStripeSandboxRefund(c, association(r), fetcher, guard),
+    retrieve: (r, known) =>
+      retrieveStripeSandboxRefund(c, association(r), fetcher, known),
+  };
+}
+function paypalConfiguration(
+  raw: PayPalSandboxConfig,
+  s: OwnerRefundScope,
+): PayPalSandboxConfig {
+  const c = fields(raw, [
+    "enabled",
+    "mode",
+    "instanceId",
+    "expectedMerchantId",
+    "clientId",
+    "clientSecret",
+    "canonicalOrigin",
+  ]);
+  if (c.enabled !== true || c.mode !== s.mode || c.instanceId !== s.instanceId)
+    fail("invalid_request");
+  const canonicalOrigin = text(
+    c.canonicalOrigin,
+    /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/,
+  );
+  try {
+    if (new URL(canonicalOrigin).origin !== canonicalOrigin)
+      fail("invalid_request");
+  } catch {
+    fail("invalid_request");
+  }
+  return {
+    enabled: true,
+    ...s,
+    canonicalOrigin,
+    expectedMerchantId: text(c.expectedMerchantId, /^[2-9A-HJ-NP-Z]{13}$/),
+    clientId: text(c.clientId, /^[\x21-\x39\x3B-\x7E]{16,512}$/),
+    clientSecret: text(c.clientSecret, /^[\x21-\x7E]{16,512}$/),
+  };
+}
+function paypalAdapter(
+  c: PayPalSandboxConfig,
+  fetcher: PayPalSandboxFetch,
+): RefundAdapter {
+  const original = (r: Saved) => ({
+    orderId: r.order_id,
+    attemptId: r.payment_request_id,
+    createOperationKey: r.create_operation_key,
+    providerOrderId: r.provider_object_ref,
+    captureId: r.transaction_ref,
+    amountCents: r.amount_cents,
+    refundOperationKey: r.operation_key,
+  });
+  return {
+    provider: "paypal",
+    accountRef: c.expectedMerchantId,
+    canonicalOrigin: c.canonicalOrigin,
+    create: async (r, guard) =>
+      (await createPayPalSandboxRefund(c, original(r), fetcher, guard))
+        .refundId,
+    retrieve: (r, known) =>
+      retrievePayPalSandboxRefund(c, original(r), fetcher, known),
+  };
 }
 async function persistObservation(
   db: D1Database,
@@ -395,42 +487,34 @@ async function query(
   db: D1Database,
   id: Identity,
   r: Saved,
-  c: StripeSandboxConfig,
-  fetcher: StripeSandboxFetch,
+  c: RefundAdapter,
   clock: () => number,
   hook?: () => Promise<void>,
   knownId: string | null = null,
 ) {
   if (hook) await hook();
-  let result: StripeSandboxRefund;
+  let result: StripeSandboxRefund | null;
   try {
-    result = await retrieveStripeSandboxRefund(
-      c,
-      association(r),
-      fetcher,
-      knownId ?? r.refund_id,
-    );
+    result = await c.retrieve(r, knownId ?? r.refund_id);
   } catch {
     return { ...receipt(r), state: "review_required" as const };
   }
   if (hook) await hook();
+  if (!result) return { ...receipt(r), state: "review_required" as const };
   return safe(() => persistObservation(db, id, result, clock));
 }
-export async function startOwnerStripeRefund(
+async function startRefund(
   db: D1Database,
   rawScope: OwnerRefundScope,
   rawActor: AdminPrincipal,
   rawInput: OwnerRefundInput,
-  rawConfig: StripeSandboxConfig,
-  fetcher: StripeSandboxFetch,
+  c: RefundAdapter,
   clock: () => number = Date.now,
   beforeMutation?: () => Promise<void>,
 ): Promise<OwnerRefundReceipt> {
   const s = scope(rawScope),
     a = principal(rawActor),
-    i = input(rawInput),
-    c = configuration(rawConfig, s);
-  transport(fetcher, clock, beforeMutation);
+    i = input(rawInput);
   const id = await safe(() => identity(s, a, i));
   const replay = await safe(async () => {
     await checkedScope(db, s);
@@ -452,12 +536,13 @@ export async function startOwnerStripeRefund(
       .bind(i.orderId, s.mode, s.instanceId)
       .first<{
         capture_id: string;
+        provider: "stripe" | "paypal";
         version: number;
         account_ref: string;
         canonical_origin: string;
-        charge_id: string;
-        payment_intent_id: string;
-        session_id: string;
+        transaction_ref: string;
+        payment_intent_ref: string | null;
+        provider_object_ref: string;
         payment_request_id: string;
         create_operation_key: string;
         amount_cents: number;
@@ -468,14 +553,15 @@ export async function startOwnerStripeRefund(
     }
     if (
       source.version !== i.expectedVersion ||
-      source.account_ref !== c.expectedAccountId ||
+      source.provider !== c.provider ||
+      source.account_ref !== c.accountRef ||
       source.canonical_origin !== c.canonicalOrigin
     )
       fail("conflict");
     try {
       const written = await db
         .prepare(
-          `INSERT INTO commerce_owner_refund_intents(request_id,mode,instance_id,actor_hash,request_hash,order_id,capture_id,expected_version,operation_key,account_ref,canonical_origin,charge_id,payment_intent_id,session_id,payment_request_id,create_operation_key,amount_cents,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO commerce_owner_refund_intents(request_id,mode,instance_id,actor_hash,request_hash,order_id,capture_id,expected_version,operation_key,provider,account_ref,canonical_origin,transaction_ref,payment_intent_ref,provider_object_ref,payment_request_id,create_operation_key,amount_cents,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .bind(
           i.requestId,
@@ -487,11 +573,12 @@ export async function startOwnerStripeRefund(
           source.capture_id,
           i.expectedVersion,
           i.requestId,
+          source.provider,
           source.account_ref,
           source.canonical_origin,
-          source.charge_id,
-          source.payment_intent_id,
-          source.session_id,
+          source.transaction_ref,
+          source.payment_intent_ref,
+          source.provider_object_ref,
           source.payment_request_id,
           source.create_operation_key,
           source.amount_cents,
@@ -519,7 +606,7 @@ export async function startOwnerStripeRefund(
     db
       .prepare(
         `SELECT 1 AS ok FROM commerce_owner_refund_dispatches d JOIN commerce_owner_refund_intents r ON r.request_id=d.request_id JOIN commerce_owner_refund_sources s ON s.capture_id=r.capture_id
- WHERE d.request_id=? AND d.dispatch_id=? AND d.recorded_at=? AND r.request_hash=? AND r.actor_hash=? AND r.mode=? AND r.instance_id=? AND r.order_id=? AND r.expected_version=? AND r.operation_key=? AND r.account_ref=? AND r.canonical_origin=? AND r.charge_id=? AND r.payment_intent_id=? AND r.session_id=? AND r.payment_request_id=? AND r.create_operation_key=? AND r.amount_cents=? AND r.capture_id=? AND r.recorded_at=? AND s.version=r.expected_version AND s.order_id=r.order_id AND s.mode=r.mode AND s.instance_id=r.instance_id AND s.account_ref=r.account_ref AND s.canonical_origin=r.canonical_origin AND s.charge_id=r.charge_id AND s.payment_intent_id=r.payment_intent_id AND s.session_id=r.session_id AND s.payment_request_id=r.payment_request_id AND s.create_operation_key=r.create_operation_key AND s.amount_cents=r.amount_cents`,
+ WHERE d.request_id=? AND d.dispatch_id=? AND d.recorded_at=? AND r.request_hash=? AND r.actor_hash=? AND r.mode=? AND r.instance_id=? AND r.order_id=? AND r.expected_version=? AND r.operation_key=? AND r.provider=? AND r.account_ref=? AND r.canonical_origin=? AND r.transaction_ref=? AND r.payment_intent_ref IS ? AND r.provider_object_ref=? AND r.payment_request_id=? AND r.create_operation_key=? AND r.amount_cents=? AND r.capture_id=? AND r.recorded_at=? AND s.provider=r.provider AND s.version=r.expected_version AND s.order_id=r.order_id AND s.mode=r.mode AND s.instance_id=r.instance_id AND s.account_ref=r.account_ref AND s.canonical_origin=r.canonical_origin AND s.transaction_ref=r.transaction_ref AND s.payment_intent_ref IS r.payment_intent_ref AND s.provider_object_ref=r.provider_object_ref AND s.payment_request_id=r.payment_request_id AND s.create_operation_key=r.create_operation_key AND s.amount_cents=r.amount_cents`,
       )
       .bind(
         i.requestId,
@@ -532,11 +619,12 @@ export async function startOwnerStripeRefund(
         i.orderId,
         i.expectedVersion,
         r!.operation_key,
+        r!.provider,
         r!.account_ref,
         r!.canonical_origin,
-        r!.charge_id,
-        r!.payment_intent_id,
-        r!.session_id,
+        r!.transaction_ref,
+        r!.payment_intent_ref,
+        r!.provider_object_ref,
         r!.payment_request_id,
         r!.create_operation_key,
         r!.amount_cents,
@@ -577,33 +665,25 @@ export async function startOwnerStripeRefund(
   };
   let refundId: string;
   try {
-    refundId = await createStripeSandboxRefund(
-      c,
-      association(r),
-      fetcher,
-      guard,
-    );
+    refundId = await c.create(r, guard);
   } catch {
     if (guardFailed) throw guardError;
     return { ...receipt(r), state: "review_required" };
   }
-  return query(db, id, r, c, fetcher, clock, beforeMutation, refundId);
+  return query(db, id, r, c, clock, beforeMutation, refundId);
 }
-export async function reconcileOwnerStripeRefund(
+async function reconcileRefund(
   db: D1Database,
   rawScope: OwnerRefundScope,
   rawActor: AdminPrincipal,
   rawInput: OwnerRefundInput,
-  rawConfig: StripeSandboxConfig,
-  fetcher: StripeSandboxFetch,
+  c: RefundAdapter,
   clock: () => number = Date.now,
   beforeQuery?: () => Promise<void>,
 ): Promise<OwnerRefundReceipt> {
   const s = scope(rawScope),
     a = principal(rawActor),
-    i = input(rawInput),
-    c = configuration(rawConfig, s);
-  transport(fetcher, clock, beforeQuery);
+    i = input(rawInput);
   const id = await safe(() => identity(s, a, i));
   const r = await safe(async () => {
     await checkedScope(db, s);
@@ -612,5 +692,97 @@ export async function reconcileOwnerStripeRefund(
   if (!r) fail("not_found");
   configured(r, c);
   if (r.succeeded === 1 || !r.dispatch_id) return receipt(r);
-  return query(db, id, r, c, fetcher, clock, beforeQuery);
+  return query(db, id, r, c, clock, beforeQuery);
+}
+
+export async function startOwnerStripeRefund(
+  db: D1Database,
+  rawScope: OwnerRefundScope,
+  actor: AdminPrincipal,
+  input: OwnerRefundInput,
+  config: StripeSandboxConfig,
+  fetcher: StripeSandboxFetch,
+  clock: () => number = Date.now,
+  hook?: () => Promise<void>,
+): Promise<OwnerRefundReceipt> {
+  const scoped = scope(rawScope);
+  transport(fetcher, clock, hook);
+  return startRefund(
+    db,
+    scoped,
+    actor,
+    input,
+    stripeAdapter(configuration(config, scoped), fetcher),
+    clock,
+    hook,
+  );
+}
+
+export async function reconcileOwnerStripeRefund(
+  db: D1Database,
+  rawScope: OwnerRefundScope,
+  actor: AdminPrincipal,
+  input: OwnerRefundInput,
+  config: StripeSandboxConfig,
+  fetcher: StripeSandboxFetch,
+  clock: () => number = Date.now,
+  hook?: () => Promise<void>,
+): Promise<OwnerRefundReceipt> {
+  const scoped = scope(rawScope);
+  transport(fetcher, clock, hook);
+  return reconcileRefund(
+    db,
+    scoped,
+    actor,
+    input,
+    stripeAdapter(configuration(config, scoped), fetcher),
+    clock,
+    hook,
+  );
+}
+
+export async function startOwnerPayPalRefund(
+  db: D1Database,
+  rawScope: OwnerRefundScope,
+  actor: AdminPrincipal,
+  input: OwnerRefundInput,
+  config: PayPalSandboxConfig,
+  fetcher: PayPalSandboxFetch,
+  clock: () => number = Date.now,
+  hook?: () => Promise<void>,
+): Promise<OwnerRefundReceipt> {
+  const scoped = scope(rawScope);
+  transport(fetcher, clock, hook);
+  return startRefund(
+    db,
+    scoped,
+    actor,
+    input,
+    paypalAdapter(paypalConfiguration(config, scoped), fetcher),
+    clock,
+    hook,
+  );
+}
+
+export async function reconcileOwnerPayPalRefund(
+  db: D1Database,
+  rawScope: OwnerRefundScope,
+  actor: AdminPrincipal,
+  input: OwnerRefundInput,
+  config: PayPalSandboxConfig,
+  fetcher: PayPalSandboxFetch,
+  clock: () => number = Date.now,
+  hook?: () => Promise<void>,
+): Promise<OwnerRefundReceipt> {
+  const scoped = scope(rawScope);
+  transport(fetcher, clock, hook);
+  return reconcileRefund(
+    db,
+    scoped,
+    actor,
+    input,
+    paypalAdapter(paypalConfiguration(config, scoped), fetcher),
+    clock,
+    hook,
+  );
 }
