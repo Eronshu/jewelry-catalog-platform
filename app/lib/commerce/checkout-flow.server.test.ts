@@ -23,7 +23,10 @@ import * as StripeRoute from "../../routes/checkout-order-stripe";
 import * as StripeWebhookRoute from "../../routes/checkout-stripe-webhook";
 import { actStripeCheckout, actStripeWebhook } from "./stripe-checkout.server";
 import { STRIPE_SANDBOX_API_VERSION } from "./stripe-sandbox.server";
-import { startOwnerStripeRefund } from "./owner-refund.server";
+import {
+  startOwnerStripeRefund,
+  startOwnerPayPalRefund,
+} from "./owner-refund.server";
 import {
   loadCheckoutConfirmation,
   actCheckoutConfirmation,
@@ -671,6 +674,64 @@ describe("visible customer order flow on real temporary D1", () => {
     expect(
       transport.mock.calls.filter(([url]) => url.endsWith("/capture")),
     ).toHaveLength(1);
+    // The same minimal refund projection works for PayPal with all Admin flags off.
+    const refundRequestId = crypto.randomUUID();
+    expect(
+      (
+        await startOwnerPayPalRefund(
+          db,
+          { mode: "local-test", instanceId: instance },
+          { email: "owner@example.invalid", sub: "fictional-owner" },
+          {
+            requestId: refundRequestId,
+            orderId: created.orderId,
+            expectedVersion: 3,
+            acknowledge: true,
+          },
+          {
+            enabled: true,
+            mode: "local-test",
+            instanceId: instance,
+            canonicalOrigin: origin,
+            expectedMerchantId: merchant,
+            clientId: "0".repeat(32),
+            clientSecret: "1".repeat(32),
+          },
+          async () => {
+            throw Error("Synthetic OAuth outage; no actual provider");
+          },
+          () => now + 1,
+        )
+      ).state,
+    ).toBe("review_required");
+    const privateRefund = await loadCheckoutOrder(
+      get(`/checkout/orders/${created.orderId}`, client.cookie),
+      settings(),
+      created.orderId,
+    );
+    expect(privateRefund.status).toBe(200);
+    const privateBody = (await privateRefund.json()) as {
+      refund: Record<string, unknown>;
+    };
+    expect(privateBody.refund).toEqual({
+      state: "review_required",
+      amountCents: 4400,
+      refundedCents: 0,
+    });
+    expect(JSON.stringify(privateBody)).not.toContain(refundRequestId);
+    expect(JSON.stringify(privateBody)).not.toMatch(
+      /actor_hash|transaction_ref|provider_object_ref|payment_intent_ref|operation_key/,
+    );
+    const stranger = await browser();
+    expect(
+      (
+        await loadCheckoutOrder(
+          get(`/checkout/orders/${created.orderId}`, stranger.cookie),
+          settings(),
+          created.orderId,
+        )
+      ).status,
+    ).toBe(404);
   });
   it("refuses PayPal config, ownership, CSRF, extra amounts and unsigned webhook before dispatch", async () => {
     const client = await browser(),
@@ -1021,7 +1082,7 @@ describe("visible customer order flow on real temporary D1", () => {
     });
     expect(JSON.stringify(refundBody)).not.toContain(refundRequestId);
     expect(JSON.stringify(refundBody)).not.toMatch(
-      /actor_hash|charge_id|payment_intent_id|operation_key/,
+      /actor_hash|charge_id|payment_intent_id|transaction_ref|provider_object_ref|payment_intent_ref|operation_key/,
     );
     const stranger = await browser();
     expect(
