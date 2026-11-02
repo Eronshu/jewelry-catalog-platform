@@ -469,3 +469,13 @@ stock-only编译runner1505用新虚构state `jewelry-commerce-local-E4JAQx`启�
 - **安全与下一步：**两份原未知Stripe尝试、原键与保护库存继续保留，无provider请求、支付重放、强释库存或生产/部署/账户变更。本片不解决尚未定位的实际托管链接问题；先收尾主线检查，再用独立小阶段诊断。
 
 本片format/lint/生成Worker+route后的project/fixture typecheck、生产build/Admin保护及6项离线HTTP模拟通过；仅重验受影响真实D1文件11项通过（9.69秒），未重复无变化全仓测试，准确headCI将覆盖整套。独立worker_redirect_review实际核对两文件diff及20秒子进程上限/全部原断言，diff检查通过，无未解决发现；测试blob `4d7f5df991a347256cc62d0fe17f448b373e823e`，之后只补本证据文字。审查者未重复运行测试、未调用provider，实际模型设置不可读。
+
+## 2026-11-02：Stripe Endive 参数根因与首次实际付款（Issue #89）
+
+- **前置收口：**PR88准确head `5b21fe02bb44e3576f6ac7acd735928b89cbf717` CI123/run41447584721成功、独立实际审查无未解后合并main `0faa773a448bfba515f8261a57eeef9dc00c91a8`；树 `01ae9b60f1c435f7ae50870e2b4744285e5fa3a1`与源/发布相同。完整源e407fb6验证归档后清理精确本地ref/main快进，mainCI124/run41464280563成功，final6580076375；不重跑旧PR或保留旧超时阻塞。
+- **实际根因：**用户要求立即排查。先以原关联做严格只读诊断，账户GET200且本地参数校验通过，所有POST在发送前拦截。随后仅临时修改忽略的编译产物增加安全阶段/状态/受限错误字段trace，在独立新虚构CAD44订单中观测accountGET200、SessionCREATE400/invalid_request_error/param=payment_method_types。付款方式只读GET200确认test/default/card可用且on；官方错误说明确认2026-09-30.endive后已删除该请求参数，而我们固定2026-10-28.endive。不能归咎密钥或要求正式激活。原三个失败订单/键/保护库存完整保留，未重放。
+- **修正候选实际验证：**仅在临时编译产物把字段改allowed_payment_method_types[0]=card，新的独立owned订单CAD44取得真实Session200、托管页明确Sandbox/CAD44。官方4242测试卡及虚构邮箱/姓名提交后返回success；返回本身仍processing，显式canonical Session/PI/Charge查询后订单confirmed/succeeded/ready_to_pack。只一笔CAD44/match收款事实，一次CREATE/一次QUERY，checkout1→0、allocated0→1，physical5/FB1不变；刷新没有重复分配。WebMCP填表回执超时后先读实际表单确认已填，再只提交一次，未盲重复付款。
+- **现场清理与源码修复：**runner59656/93611均正常停止、各生成.dev.vars不存在，临时编译文件按原SHA256恢复；8795原Orbit1车未动、8796仅移除本次新增Orbit1恢复原空车。两个新state及脱敏恢复记录/截图保留，5193用户预览未动，未写真实资料/操作账户设置/生产/部署。从更新且CI通过main建立codex/stripe-endive-card-allowlist，只修请求字段及契约回归、相关证据文档，不修改账本/迁移/原键或加入重试。回归先RED：旧字段下26项中1失败；修正后的检查及独立审查/准确headCI须实际完成后记录。
+- **验收边界：**这是修正候选的一次实际Sandbox成功付款/返回/服务端确认/库存分配，不等于源码已合并或所有支付验收完成；拒绝/3DS/取消、真实签名事件、PayPal、退款、Safari/VoiceOver/经营UAT和正式环境仍待完成。
+
+正式源码候选42项受影响测试通过（adapter26、owned14、workerd2，共13.16秒），format/lint/生成project+fixture types、生产build/Admin保护及6项离线HTTP模拟通过。命令中一个未匹配的HTTP测试筛选不计为执行；真实HTTP链路证据来自本轮编译runner。独立worker_redirect_review实际审四文件差异及当前官方资料，无未解决发现；运行blob `22e5929cf17c49784361cb57ba33ef5c80a81e2d`、测试blob `f390cc17ee335bd7cbe1d1da22e5af684f958503`，后续仅补本证据。审查者未重复验证实际付款，不把作者记录冒充独立实测。临时tab31/32已关闭，脱敏确认截图和安全状态目录保留；源码PR/准确CI结果待实际完成。

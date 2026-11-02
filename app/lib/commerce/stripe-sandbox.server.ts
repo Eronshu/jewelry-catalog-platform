@@ -418,7 +418,8 @@ export async function createStripeSandboxSession(
     assertExpiry();
     const body = new URLSearchParams({
       mode: "payment",
-      "payment_method_types[0]": "card",
+      // Endive removed payment_method_types from requests; retain a card allowlist.
+      "allowed_payment_method_types[0]": "card",
       "adaptive_pricing[enabled]": "false",
       currency: "cad",
       client_reference_id: a.orderId,
