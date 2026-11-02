@@ -128,7 +128,7 @@ Preparation fixes the server's accepted CAD amount/rules and moves payment state
 
 Stop new preparation by removing the opt-in or server preparation flag, while retaining local mode, the original database and owned session for existing private reads. The standard runner creates a new temporary database on every invocation; restarting it is **not** restoration of the old test session/database. Never delete payment/order history, force stock release or undo migration0021 as a rollback. Preserve the printed old directory and use a reviewed forward repair if needed. Full contract and remaining payment work: [owned preparation](./COMMERCE_OWNED_PAYMENT_PREPARATION.md).
 
-User-provided screenshots show Stripe Sandbox/Test mode and PayPal CA Business/Personal Sandbox accounts are available. They do not verify local credentials, API authentication, webhook delivery or an end-to-end paid order. Use secure local configuration only once that integration is ready; never send secrets in chat or commit them.
+On 2026-11-02, the authorized local Stripe card and PayPal Personal-buyer Sandbox happy paths each reached one verified capture fact and order allocation. This does not verify webhook delivery, failure/timeout/refund cases or launch readiness. Use secure local configuration only once that integration is ready; never send secrets in chat or commit them.
 
 ## Owner commerce workspace (Issue #77)
 
@@ -136,7 +136,7 @@ The new protected routes are `/admin/commerce`, `/admin/commerce/orders`, `/admi
 
 Order views list all customers' owned test orders in this configured checkout instance, including new orders/preparations from the customer flow; legacy lab orders and other instances are excluded. Details use saved item names/SKUs/colours/sizes, quantities and CAD amounts, not today's product text/price. Only these minimal fields are selected; no raw snapshots, profile/contact data, owner/session hashes or internal payment keys are returned. GET filters and cursors are bounded; changing filters starts a new page. Inventory covers the shared fictional catalog in the isolated database, including unpublished/disabled variants, with separate physical/FB/checkout/allocated quantities; unpublished or disabled variants have zero website availability.
 
-These are read-only views. They do not receive stock, release a prepared order, refund, take payment or ship goods. Stop/revert the new routes/navigation without changing any order/stock history. Existing legacy review/recovery is separate and unchanged.
+The workspace summaries remain read-only. Separate default-off owner stock and fulfillment pages provide the controlled fictional operations described below; there is no refund or real shipment service. Stop/revert the new routes/navigation without changing any order/stock history. Existing legacy review/recovery is separate and unchanged.
 
 For visual review without an Admin account:
 
@@ -154,6 +154,14 @@ The private order can expose hosted Stripe **test** payment only under explicit 
 
 The default runner still has no provider transport. This feature adds an explicit private external-file opt-in, a PayPal choice on the same owned order, hosted approval, explicit capture and canonical query before confirming/allocating the same stock. It does not introduce customer accounts or save actual addresses. Read [the PayPal setup, pauses, recovery and outstanding acceptance](./COMMERCE_PAYPAL_CHECKOUT.md) before configuring any account. Safe local credentials and actual provider calls require separate user authorization; development evidence uses offline HTTP fixtures only.
 
-## Owner stock operations / Issue #83 (under review)
+## Owner stock operations / Issue #83 (merged as PR #84)
 
 Explicit `COMMERCE_LOCAL_STOCK_OPERATIONS=1 npm run commerce:local` prepares the default-off local inventory actions and scope independently of payments. It supplies no Admin login/bypass. Read [the four actions, safe pauses and same-request recovery](./COMMERCE_OWNER_STOCK.md). Presentation-only `/owner-stock-preview` on the separate Admin shell preview uses memory fixtures and does not verify authenticated stock writes.
+
+## Owner packing and full-order handoff / Issue #91
+
+`COMMERCE_LOCAL_FULFILLMENT=1 npm run commerce:local` supplies `COMMERCE_OWNER_FULFILLMENT_UI=local-test` and `COMMERCE_OWNER_FULFILLMENT_WRITES=local-test` only to a new isolated fictional runner. It provides no Admin login/bypass and creates no paid fixture automatically. Existing approved Admin authentication and a canonical verified paid order in the same instance are required. No provider calls are made by fulfillment itself. Do not restart the standard runner to recover a prior database: preserve its old state/instance instead.
+
+From order details choose **Packing, handoff and history**. Pack the whole order, reload, then record the matching pickup, completed local delivery or postal handoff. Packing retains allocation; handoff consumes physical and allocated stock once. A postal handoff is not delivery confirmation. There are no partial shipments, customer contact fields, postage/labels, tracking service, notifications, refunds or actual carrier calls. See [fulfillment boundaries, recovery and rollback](./COMMERCE_OWNER_FULFILLMENT.md).
+
+Pause new operations by removing only `COMMERCE_OWNER_FULFILLMENT_WRITES`; retain the UI, original scope/database and authenticated access for same-request lookup/history. Do not delete receipts or restore an older database to undo handoff. The separate Admin preview's `/owner-fulfillment-preview?state=packed&delivery=shipping` uses fictional props and paused controls only; it is not authenticated-runtime or real Safari/UAT evidence.

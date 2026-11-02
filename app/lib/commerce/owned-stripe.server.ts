@@ -220,7 +220,7 @@ function project(r: Row, now: number): OwnedStripePayment {
     r.factId &&
     r.state === "confirmed" &&
     r.paymentState === "succeeded" &&
-    r.fulfillment === "ready_to_pack"
+    ["ready_to_pack", "completed"].includes(r.fulfillment)
   )
     return { state: "paid", canStart: false, canQuery: false };
   if (

@@ -40,6 +40,11 @@ if (stockMode !== undefined && stockMode !== "1")
     "COMMERCE_LOCAL_STOCK_OPERATIONS only accepts 1 for fictional local operations.",
   );
 const stockOperations = stockMode === "1";
+const fulfillmentMode = process.env.COMMERCE_LOCAL_FULFILLMENT;
+if (fulfillmentMode !== undefined && fulfillmentMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_FULFILLMENT only accepts 1 for fictional local fulfillment.",
+  );
 const preparePayment =
   preparationMode === "1" || stripe !== null || paypal !== null;
 const privateSettings = {
@@ -98,6 +103,12 @@ writeFileSync(
         COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
         COMMERCE_CHECKOUT_EXPIRY: "local-test",
         COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
+        ...(fulfillmentMode === "1"
+          ? {
+              COMMERCE_OWNER_FULFILLMENT_UI: "local-test",
+              COMMERCE_OWNER_FULFILLMENT_WRITES: "local-test",
+            }
+          : {}),
         ...(stockOperations
           ? {
               COMMERCE_OWNER_STOCK_UI: "local-test",

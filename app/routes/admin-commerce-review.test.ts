@@ -26,6 +26,8 @@ import * as ScreenRoute from "./admin-commerce-reservations";
 import * as RecoverRoute from "./admin-commerce-recover";
 import * as WorkspaceRoute from "./admin-commerce";
 import * as OwnerStockRoute from "./admin-commerce-stock-command";
+import * as OwnerFulfillmentRoute from "./admin-commerce-fulfillment-command";
+import * as OwnerFulfillmentPageRoute from "./admin-commerce-fulfillment";
 import * as WorkspaceOrdersRoute from "./admin-commerce-orders";
 import handleDocument from "../entry.server";
 import { applyStockCommand } from "../lib/commerce/inventory.server";
@@ -82,6 +84,16 @@ const ownerStock = {
   path: "admin/commerce/inventory/:variantId/commands",
   module: OwnerStockRoute,
 };
+const ownerFulfillment = {
+  id: "routes/admin-commerce-fulfillment-command",
+  path: "admin/commerce/orders/:orderId/fulfillment/commands",
+  module: OwnerFulfillmentRoute,
+};
+const ownerFulfillmentPage = {
+  id: "routes/admin-commerce-fulfillment",
+  path: "admin/commerce/orders/:orderId/fulfillment",
+  module: OwnerFulfillmentPageRoute,
+};
 const handler = createRequestHandler(
   {
     entry: { module: { default: handleDocument } },
@@ -92,12 +104,28 @@ const handler = createRequestHandler(
       [workspace.id]: workspace,
       [workspaceOrders.id]: workspaceOrders,
       [ownerStock.id]: ownerStock,
+      [ownerFulfillment.id]: ownerFulfillment,
+      [ownerFulfillmentPage.id]: ownerFulfillmentPage,
     },
     assets: {
       entry: { imports: [], module: "/entry.js" },
       routes: {
+        [ownerFulfillmentPage.id]: {
+          id: ownerFulfillmentPage.id,
+          path: ownerFulfillmentPage.path,
+          module: "/fulfillment.js",
+          hasLoader: true,
+          hasAction: true,
+          hasErrorBoundary: true,
+        },
         ...Object.fromEntries(
-          [workspace, workspaceOrders, ownerStock].map((item) => [
+          [
+            workspace,
+            workspaceOrders,
+            ownerStock,
+            ownerFulfillment,
+            ownerFulfillmentPage,
+          ].map((item) => [
             item.id,
             {
               id: item.id,
@@ -1309,4 +1337,157 @@ describe("Worker → React Router owner stock write boundary", () => {
     expect(prepare).not.toHaveBeenCalled();
     expect(batch).not.toHaveBeenCalled();
   });
+});
+
+describe("Worker to Router owner fulfillment boundary", () => {
+  const orderId = "order-33333333-3333-4333-8333-333333333333";
+  const fields = () =>
+    new URLSearchParams({
+      intent: "apply",
+      requestId: "22222222-2222-4222-8222-222222222222",
+      operation: "pack",
+      expectedVersion: "3",
+      acknowledge: "true",
+    });
+  async function fulfill(
+    database: object,
+    assertion?: string,
+    options: {
+      enabled?: boolean;
+      writes?: boolean;
+      method?: string;
+      origin?: string;
+      body?: string;
+      query?: string;
+    } = {},
+  ) {
+    const method = options.method ?? "POST";
+    return handleWorkerRequest(
+      new Request(
+        `${origin}/admin/commerce/orders/${orderId}/fulfillment/commands${options.query ?? ""}`,
+        {
+          method,
+          headers: {
+            ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+            Origin: options.origin ?? origin,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          ...(method === "GET" || method === "HEAD"
+            ? {}
+            : { body: options.body ?? fields().toString() }),
+        },
+      ),
+      {
+        ...env(database),
+        ...(options.enabled === false
+          ? {}
+          : { COMMERCE_OWNER_FULFILLMENT_UI: "local-test" }),
+        ...(options.writes === false
+          ? {}
+          : { COMMERCE_OWNER_FULFILLMENT_WRITES: "local-test" }),
+      } as Env,
+      {} as ExecutionContext,
+      handler,
+    );
+  }
+  it("rejects absent, service and unapproved identities before accessing orders", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn();
+    for (const [assertion, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "unapproved" }), 403],
+      [await jwt({ common_name: "service" }), 401],
+    ] as const)
+      expect((await fulfill({ prepare, batch }, assertion)).status).toBe(
+        status,
+      );
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("keeps default-off, Origin, paused writes and exact forms ahead of storage", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn(),
+      assertion = await jwt();
+    const bad = fields();
+    bad.set("operation", "refund");
+    const extra = fields();
+    extra.set("customerEmail", "person@example.invalid");
+    for (const [options, status] of [
+      [{ enabled: false }, 404],
+      [{ writes: false }, 503],
+      [{ method: "GET" }, 405],
+      [{ method: "HEAD" }, 405],
+      [{ origin: "http://127.0.0.1:8999" }, 404],
+      [{ body: bad.toString() }, 422],
+      [{ body: extra.toString() }, 422],
+      [{ query: "?unsafe=1" }, 422],
+      [{ body: fields().toString() + "&expectedVersion=3" }, 400],
+    ] as const) {
+      const response = await fulfill({ prepare, batch }, assertion, options);
+      expect(response.status).toBe(status);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+});
+
+it("returns private JSON from the authenticated fulfillment resource and permits same-request lookup while writes are paused", async () => {
+  const prepare = vi.fn((sql: string) => ({
+    bind: vi.fn().mockReturnThis(),
+    first: vi.fn(async () =>
+      sql.includes("FROM commerce_payment_scope") ? { ok: 1 } : null,
+    ),
+  }));
+  const response = await handleWorkerRequest(
+    new Request(
+      origin +
+        "/admin/commerce/orders/order-33333333-3333-4333-8333-333333333333/fulfillment/commands",
+      {
+        method: "POST",
+        headers: {
+          "Cf-Access-Jwt-Assertion": await jwt(),
+          Origin: origin,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          intent: "lookup",
+          requestId: "22222222-2222-4222-8222-222222222222",
+          operation: "pack",
+          expectedVersion: "3",
+          acknowledge: "true",
+        }),
+      },
+    ),
+    { ...env({ prepare }), COMMERCE_OWNER_FULFILLMENT_UI: "local-test" } as Env,
+    {} as ExecutionContext,
+    handler,
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Type")).toContain("application/json");
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({ state: "not_recorded" });
+  expect(prepare).toHaveBeenCalledTimes(2);
+});
+
+it("preserves a missing fulfillment order's 404 in the page boundary without rendering incomplete data", async () => {
+  const prepare = vi.fn((sql: string) => ({
+    bind: vi.fn().mockReturnThis(),
+    first: vi.fn(async () =>
+      sql.includes("FROM commerce_payment_scope") ? { ok: 1 } : null,
+    ),
+  }));
+  const response = await handleWorkerRequest(
+    new Request(
+      origin +
+        "/admin/commerce/orders/order-33333333-3333-4333-8333-333333333333/fulfillment",
+      { headers: { "Cf-Access-Jwt-Assertion": await jwt() } },
+    ),
+    { ...env({ prepare }), COMMERCE_OWNER_FULFILLMENT_UI: "local-test" } as Env,
+    {} as ExecutionContext,
+    handler,
+  );
+  expect(response.status).toBe(404);
+  expect(await response.text()).toContain("Test fulfillment page unavailable");
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
 });

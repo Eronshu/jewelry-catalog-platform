@@ -30,7 +30,7 @@ const fulfillmentNames: Record<string, string> = {
   none: "Not started",
   held: "On hold",
   ready_to_pack: "Ready to pack in test records",
-  completed: "Completed in test records",
+  completed: "Handoff recorded in test records",
 };
 const stateLabel = (labels: Record<string, string>, value: string) =>
   labels[value] ?? "Unrecognized status — needs review";
@@ -76,8 +76,12 @@ function PaymentNotice({ order }: { order: WorkspaceOrder }) {
   if (order.paymentState === "succeeded")
     return (
       <p className="commerce-workspace-notice">
-        Test payment is recorded and stock is allocated to this order. These are
-        fictional items and test funds; this does not authorize a real shipment.
+        Test payment is recorded.{" "}
+        {order.fulfillmentState === "completed"
+          ? "The handoff is recorded and the order’s allocated stock has been consumed."
+          : "Stock is allocated to this order."}{" "}
+        These are fictional items and test funds; this does not authorize a real
+        shipment.
       </p>
     );
   return (
@@ -190,6 +194,8 @@ function Orders({
             <option value="all">All orders</option>
             <option value="awaiting">Awaiting payment preparation</option>
             <option value="prepared">Payment preparation recorded</option>
+            <option value="paid">Paid — packing and handoff</option>
+            <option value="completed">Handoff recorded</option>
             <option value="cancelled">Cancelled</option>
           </select>
         </label>
@@ -242,6 +248,14 @@ function OrderDetail({
         </p>
         <Facts order={order} />
         <PaymentNotice order={order} />
+        {view.canManageFulfillment && (
+          <Link
+            className="admin-primary-link"
+            to={`${base}/orders/${encodeURIComponent(order.reference)}/fulfillment`}
+          >
+            Packing, handoff and history
+          </Link>
+        )}
         <p className="commerce-workspace-muted">
           Reservation deadline: <Time value={order.reserveUntil} />. A past
           deadline alone does not prove that stock was released.

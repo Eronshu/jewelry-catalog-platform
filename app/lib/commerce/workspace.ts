@@ -50,7 +50,7 @@ export type WorkspaceSummary = {
   allocatedUnits: number;
 };
 export type WorkspaceOrderFilter =
-  "all" | "awaiting" | "prepared" | "cancelled";
+  "all" | "awaiting" | "prepared" | "paid" | "completed" | "cancelled";
 export type WorkspaceStockFilter = "all" | "available" | "unavailable";
 export type WorkspaceView = (
   | {
@@ -65,7 +65,12 @@ export type WorkspaceView = (
       reference: string;
       nextCursor: string | null;
     }
-  | { kind: "order"; order: WorkspaceOrder; lines: WorkspaceLine[] }
+  | {
+      kind: "order";
+      canManageFulfillment?: boolean;
+      order: WorkspaceOrder;
+      lines: WorkspaceLine[];
+    }
   | {
       kind: "inventory";
       canManageStock?: boolean;
