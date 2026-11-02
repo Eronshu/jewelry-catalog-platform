@@ -70,3 +70,38 @@ Safe local credentials and explicit fictional Sandbox authorization are now pres
 Still required separately: actual Sandbox success, decline/authentication, cancellation, missing-return, signed-event and late-event recovery; provider account/amount comparison; iPhone Safari and VoiceOver; owner UAT; persistent background reconciliation/monitoring/restart recovery; refunds/disputes/notifications; real business/tax/privacy rules; distinct nonproduction/production resources and explicit release authorization. HTTP fixtures do not check any of those boxes. No live payments, merchant-account operations or deployment are authorized by this document.
 
 Official API references checked during implementation: [Session create](https://docs.stripe.com/api/checkout/sessions/create), [Session retrieve](https://docs.stripe.com/api/checkout/sessions/retrieve), [metadata propagation](https://docs.stripe.com/metadata), [PaymentIntent](https://docs.stripe.com/api/payment_intents/object), [Charge](https://docs.stripe.com/api/charges/object), [idempotent requests](https://docs.stripe.com/api/idempotent_requests). Current code pins its API version; capabilities must still be confirmed in the actual Sandbox. No fees, legal conclusions or provider qualification guarantees are asserted here.
+
+## 2026-11-02 Endive request compatibility and actual Sandbox success (Issue #89)
+
+Safe local transport tracing isolated the second failure: canonical account GET
+returned 200; Session CREATE returned 400 / invalid_request_error with parameter
+payment_method_types. Read-only Sandbox payment-method configuration returned
+card available/on. Stripe's [official error guide](https://support.stripe.com/questions/fix-the-payment-method-types-error)
+confirms the request field was removed from 2026-09-30.endive onward. Our pinned
+2026-10-28.endive therefore requires the documented
+[allowed_payment_method_types](https://docs.stripe.com/api/checkout/sessions/create)
+request allowlist. Response payment_method_types remains valid. No API downgrade,
+Dashboard change, live activation, new credentials or unrestricted payment-method
+selection is needed. CAD and explicit Adaptive Pricing off remain unchanged.
+
+A controlled compiled-artifact-only trial replaced that single field before the
+source repair: a new fictional CAD44 owned order received a real test Session
+(HTTP200), opened Stripe's Sandbox hosted page and paid with the official4242 test
+card and fictional contact details. Return alone left the order processing; an
+explicit canonical Session/PaymentIntent/Charge query then recorded exactly one
+CAD44 matching capture fact, confirmed/succeeded/ready_to_pack and inventory
+checkout_reserved1→0 / allocated0→1 (on_hand5 / FB1 unchanged). Refresh did not
+duplicate the fact or allocation. One CREATE and one QUERY were persisted.
+
+The temporary trace/compiled artifact was restored exactly, the runner stopped
+normally, its generated private settings removed and its original empty cart
+restored. Previous failed attempts and protected stock were not replayed or
+released. Only stage/status/restricted error fields were logged; no credentials,
+request bodies or raw provider responses entered Git. Private recovery records
+remain outside the repository.
+
+The source repair replaces only the request field and adds a deprecated-field
+regression. This evidence establishes one actual successful Sandbox card journey
+for the corrected candidate, not completion of decline/3DS/cancellation, genuine
+Webhook delivery, PayPal, refunds, Safari/VoiceOver, owner UAT or live readiness.
+Exact-head CI and independent review still gate source integration.

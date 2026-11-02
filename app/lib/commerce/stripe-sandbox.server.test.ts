@@ -170,7 +170,11 @@ describe("isolated Stripe Sandbox transport", () => {
     expect(new Headers(first.headers).has("Stripe-Account")).toBe(false);
     const body = new URLSearchParams(first.body as string);
     expect(body.get("line_items[0][price_data][unit_amount]")).toBe("4400");
-    expect(body.get("payment_method_types[0]")).toBe("card");
+    expect(body.get("allowed_payment_method_types[0]")).toBe("card");
+    // Endive rejects the old request field; it is still valid in responses.
+    expect(
+      [...body.keys()].some((key) => key.startsWith("payment_method_types")),
+    ).toBe(false);
     expect(body.get("mode")).toBe("payment");
     expect(body.get("currency")).toBe("cad");
     expect(body.get("adaptive_pricing[enabled]")).toBe("false");
