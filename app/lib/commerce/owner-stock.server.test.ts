@@ -441,7 +441,9 @@ describe("owner stock commands on real temporary D1", () => {
     expect(
       (await db.prepare("PRAGMA foreign_key_check").all()).results,
     ).toEqual([]);
-  });
+    // This case restarts workerd around a real migration (20s subprocess cap).
+    // Keep its data/FK assertions within an explicit integration-test budget.
+  }, 30_000);
   it("records four operations, preserves unpublished status, and returns immutable historical receipts", async () => {
     const v = await fixture();
     await db

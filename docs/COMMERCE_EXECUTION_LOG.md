@@ -461,3 +461,11 @@ stock-only编译runner1505用新虚构state `jewelry-commerce-local-E4JAQx`启�
 - **剩余门槛：**修复还需当前head完整检查、PR/CI及审查流程；随后继续真实托管付款/返回/canonical收款和原子库存分配。当前没有实际付款、PayPal批准/capture、真实签名事件、Safari/VoiceOver、经营UAT或营业验收通过。不会把此次受控出站回归当作真实服务商端到端结果。
 
 - **修复后实际复验：**新的隔离实例走Orbit Gold×2 + Bar Silver×1→虚构Ontario邮寄CAD99→独立私有订单→一次Stripe start。仍显示review_required、没有托管链接；只读canonical列表HTTP200、无匹配且无下一页。当前尚未定位该次失败原因，不能归因于账户flag，也不能声称redirect修复已完成真实付款。保留唯一派发、原键、processing订单及三件checkout预留，capture事实为0、allocated为0；未重复CREATE或强释库存。移除本轮新增Bar项、恢复原Orbit×2购物车后正常停止runner95460，生成.dev.vars不存在，两个实例和最小安全恢复记录保留。未输入卡资料或改变商家账户；没有真实支付成功/失败卡/取消/返回/事件验收。
+
+## 2026-11-02：主线迁移测试预算（Issue #87）
+
+- **触发与现场：**PR86准确head `508382a2ec1b32958913072b31c1bc27d566af69` 的CI121及独立实际审查通过后合并main `5bf4eced499d6016a157df69bc67be421ffcc245`；树 `db5f765a84d15166e8f9a4d33e7eaea5b3b5d28a`与验收/发布树一致，完整源已bundle验证后清理精确本地ref，未删除远程分支。main CI122/run41430275339两次均仅owner-stock.server.test.ts的完整历史升级用例超过默认5000ms，其余1585项通过；首失败仅重跑failedjobs一次，没有循环重试或冒称主线成功。
+- **最小修复：**为恢复主线，从干净的该main另建 `codex/owner-stock-migration-timeout`。仅给这一项需要重启workerd、真实Wrangler迁移与逐表比对的集成测试30秒预算；迁移子进程仍有原20秒上限，所有财务/owned历史相等、capture存在、命令为空与FK检查断言不变。未改全局timeout、重试次数、生产代码、迁移或付款/库存约束。必要检查、独立审查和准确headCI结果在实际完成后记录。
+- **安全与下一步：**两份原未知Stripe尝试、原键与保护库存继续保留，无provider请求、支付重放、强释库存或生产/部署/账户变更。本片不解决尚未定位的实际托管链接问题；先收尾主线检查，再用独立小阶段诊断。
+
+本片format/lint/生成Worker+route后的project/fixture typecheck、生产build/Admin保护及6项离线HTTP模拟通过；仅重验受影响真实D1文件11项通过（9.69秒），未重复无变化全仓测试，准确headCI将覆盖整套。独立worker_redirect_review实际核对两文件diff及20秒子进程上限/全部原断言，diff检查通过，无未解决发现；测试blob `4d7f5df991a347256cc62d0fe17f448b373e823e`，之后只补本证据文字。审查者未重复运行测试、未调用provider，实际模型设置不可读。
