@@ -843,6 +843,8 @@ const query = (i: OwnerRefundInput, fetcher: StripeSandboxFetch) =>
     () => now + 60000,
   );
 describe("owner one-shot Stripe test refund on real local D1", () => {
+  // This scenario seeds both providers and restarts D1 around a real migration.
+  // Give only this upgrade drill a bounded integration budget on shared CI.
   it("upgrades populated 0025 financial and packing/handoff history without changing rows or foreign keys", async () => {
     await selectBaseline();
     await legacyHistory();
@@ -863,7 +865,7 @@ describe("owner one-shot Stripe test refund on real local D1", () => {
       provider: "paypal",
       canStart: false,
     });
-  });
+  }, 30000);
   it("records a full refund only after fresh GET evidence and leaves capture/order/stock unchanged", async () => {
     const item = await paid(),
       i = await refundInput(item.orderId),
