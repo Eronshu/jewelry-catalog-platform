@@ -293,6 +293,9 @@ export async function loadCommerceWorkspace(
         last = items.at(-1);
       view = {
         kind: "inventory",
+        canManageStock:
+          Object.getOwnPropertyDescriptor(env, "COMMERCE_OWNER_STOCK_UI")
+            ?.value === "local-test",
         observedAt,
         items,
         filter: filter as WorkspaceStockFilter,

@@ -301,7 +301,13 @@ function OrderDetail({
     </>
   );
 }
-function StockCard({ item }: { item: WorkspaceStock }) {
+function StockCard({
+  item,
+  canManage = false,
+}: {
+  item: WorkspaceStock;
+  canManage?: boolean;
+}) {
   const availability = !item.active
     ? "Variant disabled"
     : item.productStatus !== "available"
@@ -320,6 +326,14 @@ function StockCard({ item }: { item: WorkspaceStock }) {
       </p>
       <p className="commerce-workspace-reference">SKU: {item.sku}</p>
       <p className="commerce-workspace-stock-status">{availability}</p>
+      {canManage && (
+        <Link
+          className="admin-primary-link"
+          to={`/admin/commerce/inventory/${encodeURIComponent(item.variantId)}`}
+        >
+          Manage test stock
+        </Link>
+      )}
       <dl className="commerce-workspace-facts commerce-workspace-stock-counts">
         <div>
           <dt>Physical stock</dt>
@@ -395,7 +409,11 @@ function Inventory({
       {view.items.length ? (
         <div className="commerce-workspace-list">
           {view.items.map((item) => (
-            <StockCard item={item} key={item.variantId} />
+            <StockCard
+              item={item}
+              key={item.variantId}
+              canManage={view.canManageStock}
+            />
           ))}
         </div>
       ) : (
@@ -487,7 +505,11 @@ export function CommerceWorkspace({ view }: { view: WorkspaceView }) {
   return (
     <AdminShell localReservations>
       <div className="commerce-workspace">
-        <p className="admin-kicker">Local test · fictional data · read only</p>
+        <p className="admin-kicker">
+          {view.kind === "inventory" && view.canManageStock
+            ? "Local test · fictional data · controlled stock actions"
+            : "Local test · fictional data · read only"}
+        </p>
         <div className="admin-page-heading">
           <div>
             <h1>

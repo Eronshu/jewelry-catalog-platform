@@ -436,3 +436,17 @@
 - **门槛与后续：**当前仅本地开发；准确发布head CI、合并树/归档/main CI必须在实际完成后记录。关闭新starts/capture但保留原配置/数据库/会话可继续核查；停止runner而不是删事实、强释库存或逆迁移。当前PR未收口前不堆下一项；之后收货/FB留量、交付、退款、通知、对账、恢复与真机/经营规则/UAT仍分别验收。真实账户API/支付/事件需要用户本机安全配置和对应授权，不索要聊天密钥、密码或卡资料。
 
 最终修复整合后，完整format/lint/生成project+fixture typecheck和生产build再次通过；6个受影响文件80项测试通过（14.11秒），包括最终16项D1核心、18项provider适配、私有HTTP/后台与UI。未重复无变化全仓测试；远程CI将覆盖最终准确发布head。
+
+## 2026-10-31：Issue #83 合格收货与 Facebook 单件留量
+
+- **前置收口：**#82准确head `771eb957409873b50c6e0541ffa56fb0eb3875da` 的CI117、独立审查通过，合并main `7c56c607d97dacf5ca9fd737fb5055af5153ffd0`、tree `7698e2591a1dce14867933f375e416dfa4fe8cca`与验收树相同；mainCI118/run41222863311通过。三个完整源已验证bundle归档并清理干净本地树/refs；远程删除不支持，未执行。当前从更新main建 `codex/owner-stock-operations` 和独立 `codex/owner-stock-core`，只做Issue83，不重做支付、不堆下一功能。
+- **交付：**本机受保护库存详情和四项操作：已验收合格收货、FB留一件、放回该留量、登记该件售出。收货不发布商品；在途/拒收货不计可售；FB不是完整订单或付款记录。复用原command/movement/inventory权威，0024只追加不可变owner回执/哈希审计；同一事务核对variant版本与全库存快照并验证完整效果，不能动用checkout_reserved/allocated。技术单次收货1–1000，不作为经营政策。独立UI/WRITES开关默认关闭；暂停新写仍可查原回执。
+- **保存/恢复：**核心代理用量中断后继续三个已保存文件，没有重生；最终源 `79a7153f392fda4ad29d134f983d59267a244e6b` 四文件整合为 `2625976c1816555ad2dbcb4a79172020b9291a03`，blob无差异。11项真实D1核心通过（10.18秒），含实际旧capture/work/event历史及owned hold升级保留、四操作、并发/actor/scope/原键恢复、silent IGNORE全回滚、已预留/分配保护；范围fmt/lint/strictTS通过。根UI在hydration后读tab存储，写前确认原UUID/完整输入持久化，未知/刷新不自动重发或换键；成功回执标明历史after快照，不冒充当前库存。
+- **独立实际审查发现与修复：**`customer_flow_review`发现P1：原生fetch POST UI route可能已改库存却收到document HTML，拿不到JSON回执。根改成无UI/default/ErrorBoundary的 `/admin/commerce/inventory/:variantId/commands` resource，详情页POST拒绝；补签名合成JWT→真实Worker→Router resource→临时D1的positive流程，断言apply和暂停后lookup的JSON/private响应、同一库存和顾客hold。P1实际复审关闭，其余限定范围无未解决项，审查者未跑测试/无provider调用，模型设置不可读。根scope明确只传mode/instance以匹配严格core接口，未放宽验证。
+- **根检查调整：**前端测试初用普通MemoryRouter无法支持AdminShell的data hooks，改实际data router；happy-dom/select与全局DOM类型结构差异改测试边界cast，未更改运行行为。一个新增Origin拒绝断言原写403，按既有local availability先拒绝的404修正，未改Origin或权限规则。根完整检查/准确headCI及合并在实际完成后另记，不提前勾选。
+- **可见预览：**5193新增presentation-only `/owner-stock-preview`，实际组件配合内存虚构回执，不是Admin登录、D1或真实库存。FB售一件后显示physical9/FB0/checkout2/allocated3的历史快照，状态获焦；手机390px初有fieldset min-content右缘401.5，补min-inline-size:0及select宽度后scroll/client均390、select/button44px、main1。原用户预览未停止，临时viewport已重置。真实授权浏览器、iPhone Safari、VoiceOver和小姨UAT仍未完成。
+- **停止/后续：**当前仅虚构本地，不接真实provider/账户/资料/生产/计费/部署，不改经营规则。保留原request/ledger/receipt/payment/history，通过关新写/回退UI或停runner暂停；不删除回执、降迁移或强改库存余额。当前PR必须准确headCI/独立审查无未解决项→核合并树→完整源归档→清理→mainCI后，下一分支才做交付。
+
+最终完整format/lint/生成project+fixture typecheck、89文件1584项应用测试（130.21秒）、6项离线HTTP模拟、生产build/Admin资产保护通过。最终CSS收缩修正与证据文档另做范围格式检查，不重跑无变化业务测试。独立最终CSS blob `0f0a03864329d66e5c468298aa87927e518c360e`复审无问题；其余核心/权限/UI运行blob保持已审快照。
+
+stock-only编译runner1505用新虚构state `jewelry-commerce-local-E4JAQx`启动，未启用任何provider；真实本地D1查询确认scope为local-test、owner_commands为0，证明不依赖preparePayment的seed分支。额外终端HTTP探测被执行沙箱的socket权限拒绝，不计作401/授权HTTP证据；权限正反路径证据来自前述签名JWT/Worker/Router/D1测试。runner随后停止、临时state保留，不冒称恢复或实际授权浏览器；用户5193表现预览继续保留。

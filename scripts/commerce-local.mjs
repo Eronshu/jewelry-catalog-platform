@@ -34,6 +34,12 @@ if (preparationMode !== undefined && preparationMode !== "1")
   throw new Error(
     "COMMERCE_LOCAL_PAYMENT_PREPARE only accepts 1; preparation sends no provider request.",
   );
+const stockMode = process.env.COMMERCE_LOCAL_STOCK_OPERATIONS;
+if (stockMode !== undefined && stockMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_STOCK_OPERATIONS only accepts 1 for fictional local operations.",
+  );
+const stockOperations = stockMode === "1";
 const preparePayment =
   preparationMode === "1" || stripe !== null || paypal !== null;
 const privateSettings = {
@@ -92,6 +98,12 @@ writeFileSync(
         COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
         COMMERCE_CHECKOUT_EXPIRY: "local-test",
         COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
+        ...(stockOperations
+          ? {
+              COMMERCE_OWNER_STOCK_UI: "local-test",
+              COMMERCE_OWNER_STOCK_WRITES: "local-test",
+            }
+          : {}),
         ...(preparePayment
           ? { COMMERCE_CHECKOUT_PAYMENT_PREPARE: "local-test" }
           : {}),
@@ -169,7 +181,7 @@ for (let id = 1; id <= 3; id++) {
 }
 const seed = join(directory, "fictional.sql");
 const statements = [];
-if (preparePayment)
+if (preparePayment || stockOperations)
   statements.push(
     `INSERT INTO commerce_payment_scope(id,mode,instance_id,stripe_account_ref,paypal_account_ref) VALUES (1,'local-test','${checkoutInstance}','fixture-stripe','fixture-paypal');`,
   );

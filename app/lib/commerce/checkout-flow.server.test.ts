@@ -6,6 +6,11 @@ import { getPlatformProxy, type PlatformProxy } from "wrangler";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { createRequestHandler, RouterContextProvider } from "react-router";
 import { cloudflareContext } from "../../cloudflare-context";
+import { loadOwnerStockPage } from "./owner-stock-http.server";
+import * as OwnerStockCommandsRoute from "../../routes/admin-commerce-stock-command";
+import { handleWorkerRequest } from "../../../workers/app";
+import { generateKeyPair, exportJWK, SignJWT } from "jose";
+import type { OwnerStockDetail } from "./owner-stock";
 import * as CommandsRoute from "../../routes/checkout-commands";
 import * as CancelRoute from "../../routes/checkout-order-cancel";
 import * as PaymentRoute from "../../routes/checkout-order-payment";
@@ -186,6 +191,11 @@ function workspaceContext(env = settings()) {
   return value;
 }
 const commandRoutes = {
+  stock: {
+    id: "stock",
+    path: "admin/commerce/inventory/:variantId/commands",
+    module: OwnerStockCommandsRoute,
+  },
   paypal: {
     id: "paypal",
     path: "checkout/orders/:orderId/paypal",
@@ -323,6 +333,152 @@ afterAll(async () => {
 });
 
 describe("visible customer order flow on real temporary D1", () => {
+  it("connects approved owner receiving and Facebook sale to current shared stock without touching an owned hold", async () => {
+    const client = await browser(),
+      created = await create(client);
+    const enabled = settings(db, {
+      COMMERCE_OWNER_STOCK_UI: "local-test",
+      COMMERCE_OWNER_STOCK_WRITES: "local-test",
+    });
+    const paused = {
+      ...enabled,
+      COMMERCE_OWNER_STOCK_WRITES: undefined,
+    } as unknown as Env;
+    const path = `/admin/commerce/inventory/${created.variantId}`;
+    const read = async () => {
+      const response = await loadOwnerStockPage(
+        get(path),
+        workspaceContext(enabled),
+        created.variantId,
+      );
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { detail: OwnerStockDetail }).detail;
+    };
+    const fields = (
+      d: Awaited<ReturnType<typeof read>>,
+      operation: string,
+    ) => ({
+      intent: "apply",
+      requestId: crypto.randomUUID(),
+      operation,
+      quantity: "1",
+      acknowledge: "true",
+      variantVersion: String(d.variantVersion),
+      onHand: String(d.item.onHand),
+      facebookReserved: String(d.item.facebookReserved),
+      checkoutReserved: String(d.item.checkoutReserved),
+      allocated: String(d.item.allocated),
+    });
+    const issuer = "https://stock-flow-fixture.cloudflareaccess.com",
+      audience = "stock-flow-audience";
+    const pair = await generateKeyPair("RS256", { extractable: true });
+    const jwk = {
+      ...(await exportJWK(pair.publicKey)),
+      kid: "fictional-stock-flow",
+      alg: "RS256",
+    };
+    const token = await new SignJWT({
+      type: "app",
+      email: "owner@example.invalid",
+    })
+      .setProtectedHeader({ alg: "RS256", kid: jwk.kid })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject("fictional-owner")
+      .setIssuedAt()
+      .setNotBefore("0s")
+      .setExpirationTime("5m")
+      .sign(pair.privateKey);
+    const jwks = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) => {
+        if (String(url) !== `${issuer}/cdn-cgi/access/certs`)
+          throw Error("Unexpected nonlocal request");
+        return Response.json({ keys: [jwk] });
+      });
+    const run = async (form: Record<string, string>, env = enabled) => {
+      const response = await handleWorkerRequest(
+        new Request(origin + path + "/commands", {
+          method: "POST",
+          headers: {
+            "Cf-Access-Jwt-Assertion": token,
+            Origin: origin,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams(form),
+        }),
+        {
+          ...env,
+          ADMIN_ACCESS_ISSUER: issuer,
+          ADMIN_ACCESS_AUD: audience,
+          ADMIN_IDENTITY_PAIRS: JSON.stringify([
+            { email: "owner@example.invalid", sub: "fictional-owner" },
+          ]),
+        } as Env,
+        {} as ExecutionContext,
+        dispatch,
+      );
+      expect(response.headers.get("Content-Type")).toContain(
+        "application/json",
+      );
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      return response;
+    };
+    try {
+      const before = await read();
+      expect(before.item.checkoutReserved).toBe(1);
+      const receive = fields(before, "receive"),
+        result = await run(receive);
+      expect(result.status).toBe(200);
+      expect(await result.json()).toMatchObject({
+        state: "recorded",
+        receipt: {
+          operation: "receive",
+          after: { onHand: before.item.onHand + 1, checkoutReserved: 1 },
+        },
+      });
+      const replay = await run({ ...receive, intent: "lookup" }, paused);
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toMatchObject({
+        state: "recorded",
+        receipt: { requestId: receive.requestId, replayed: true },
+      });
+      expect((await run(receive, paused)).status).toBe(503);
+      const received = await read();
+      expect(received.item.websiteAvailable).toBe(
+        before.item.websiteAvailable + 1,
+      );
+      const reserve = fields(received, "fb_reserve");
+      expect((await run(reserve)).status).toBe(200);
+      expect(
+        (await run({ ...reserve, requestId: crypto.randomUUID() })).status,
+      ).toBe(409);
+      const reserved = await read();
+      expect(reserved.item.facebookReserved).toBe(1);
+      expect(reserved.item.checkoutReserved).toBe(1);
+      expect((await run(fields(reserved, "fb_sale"))).status).toBe(200);
+      const sold = await read();
+      expect(sold.item).toMatchObject({
+        onHand: before.item.onHand,
+        facebookReserved: 0,
+        checkoutReserved: 1,
+        allocated: before.item.allocated,
+      });
+      const cancelled = await cancelCheckoutOrder(
+        post(`/checkout/orders/${created.orderId}/cancel`, client.cookie, {
+          csrf: client.csrfToken,
+          releaseKey: crypto.randomUUID(),
+          expectedVersion: "1",
+        }),
+        settings(),
+        created.orderId,
+      );
+      expect(cancelled.status).toBe(200);
+    } finally {
+      jwks.mockRestore();
+    }
+  });
+
   it("connects private PayPal approval and explicit capture to the same order, stock and owner view", async () => {
     const client = await browser(),
       created = await create(client);

@@ -1,6 +1,6 @@
 # Owned PayPal Sandbox checkout — Issue #81
 
-Status: local implementation under engineering checks and independent review; not merged or provider-accepted. ADR-001 and frozen V1 remain unchanged. Default configuration is off. No actual account/API authentication, approval, capture or webhook delivery was tested.
+Status: merged as PR #82 (`7c56c60`); accurate-head CI117, independent review and main CI118 passed. Not provider-accepted. ADR-001 and frozen V1 remain unchanged. Default configuration is off. No actual account/API authentication, approval, capture or webhook delivery was tested.
 
 ## Visible flow and shared authority
 
