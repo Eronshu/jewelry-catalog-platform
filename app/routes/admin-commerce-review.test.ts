@@ -27,6 +27,7 @@ import * as RecoverRoute from "./admin-commerce-recover";
 import * as WorkspaceRoute from "./admin-commerce";
 import * as OwnerStockRoute from "./admin-commerce-stock-command";
 import * as OwnerFulfillmentRoute from "./admin-commerce-fulfillment-command";
+import * as OwnerRefundRoute from "./admin-commerce-refund-command";
 import * as OwnerFulfillmentPageRoute from "./admin-commerce-fulfillment";
 import * as WorkspaceOrdersRoute from "./admin-commerce-orders";
 import handleDocument from "../entry.server";
@@ -94,6 +95,11 @@ const ownerFulfillmentPage = {
   path: "admin/commerce/orders/:orderId/fulfillment",
   module: OwnerFulfillmentPageRoute,
 };
+const ownerRefund = {
+  id: "routes/admin-commerce-refund-command",
+  path: "admin/commerce/orders/:orderId/refund/commands",
+  module: OwnerRefundRoute,
+};
 const handler = createRequestHandler(
   {
     entry: { module: { default: handleDocument } },
@@ -106,10 +112,18 @@ const handler = createRequestHandler(
       [ownerStock.id]: ownerStock,
       [ownerFulfillment.id]: ownerFulfillment,
       [ownerFulfillmentPage.id]: ownerFulfillmentPage,
+      [ownerRefund.id]: ownerRefund,
     },
     assets: {
       entry: { imports: [], module: "/entry.js" },
       routes: {
+        [ownerRefund.id]: {
+          id: ownerRefund.id,
+          path: ownerRefund.path,
+          module: "/refund.js",
+          hasLoader: true,
+          hasAction: true,
+        },
         [ownerFulfillmentPage.id]: {
           id: ownerFulfillmentPage.id,
           path: ownerFulfillmentPage.path,
@@ -1490,4 +1504,118 @@ it("preserves a missing fulfillment order's 404 in the page boundary without ren
   expect(response.status).toBe(404);
   expect(await response.text()).toContain("Test fulfillment page unavailable");
   expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+});
+
+describe("Worker to Router isolated refund boundary", () => {
+  const orderId = "order-33333333-3333-4333-8333-333333333333";
+  const fields = () =>
+    new URLSearchParams({
+      intent: "start",
+      requestId: "22222222-2222-4222-8222-222222222222",
+      expectedVersion: "3",
+      acknowledge: "true",
+    });
+  async function refund(
+    database: object,
+    assertion?: string,
+    options: {
+      enabled?: boolean;
+      writes?: boolean;
+      queries?: boolean;
+      method?: string;
+      origin?: string;
+      body?: string;
+      query?: string;
+    } = {},
+  ) {
+    const method = options.method ?? "POST";
+    return handleWorkerRequest(
+      new Request(
+        `${origin}/admin/commerce/orders/${orderId}/refund/commands${options.query ?? ""}`,
+        {
+          method,
+          headers: {
+            ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+            Origin: options.origin ?? origin,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          ...(method === "GET" || method === "HEAD"
+            ? {}
+            : { body: options.body ?? fields().toString() }),
+        },
+      ),
+      {
+        ...env(database),
+        ...(options.enabled === false
+          ? {}
+          : { COMMERCE_OWNER_REFUND_UI: "local-test" }),
+        ...(options.writes === false
+          ? {}
+          : { COMMERCE_OWNER_REFUND_WRITES: "local-test" }),
+        ...(options.queries === false
+          ? {}
+          : { COMMERCE_OWNER_REFUND_QUERIES: "local-test" }),
+      } as Env,
+      {} as ExecutionContext,
+      handler,
+    );
+  }
+  it("denies missing, service and unapproved identities before refund access", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn();
+    for (const [assertion, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "unapproved" }), 403],
+      [await jwt({ common_name: "service" }), 401],
+    ] as const)
+      expect((await refund({ prepare, batch }, assertion)).status).toBe(status);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("rejects default-off, Origin, paused writes, missing provider and arbitrary amounts before storage", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn(),
+      assertion = await jwt();
+    const extra = fields();
+    extra.set("amountCents", "1");
+    const bad = fields();
+    bad.set("intent", "refund_all");
+    const query = fields();
+    query.set("intent", "query");
+    for (const [options, status] of [
+      [{ enabled: false }, 404],
+      [{ writes: false }, 503],
+      [{ method: "GET" }, 405],
+      [{ origin: "http://127.0.0.1:8999" }, 404],
+      [{ body: extra.toString() }, 422],
+      [{ body: bad.toString() }, 422],
+      [{ query: "?unsafe=1" }, 422],
+      [{}, 503],
+      [{ queries: false, body: query.toString() }, 503],
+    ] as const) {
+      const r = await refund({ prepare, batch }, assertion, options);
+      expect(r.status).toBe(status);
+      expect(r.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("returns local original-request lookup as private JSON while provider access and writes are paused", async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: vi.fn().mockReturnThis(),
+      first: vi.fn(async () =>
+        sql.includes("FROM commerce_payment_scope") ? { ok: 1 } : null,
+      ),
+    }));
+    const body = fields();
+    body.set("intent", "lookup");
+    const r = await refund({ prepare }, await jwt(), {
+      writes: false,
+      queries: false,
+      body: body.toString(),
+    });
+    expect(r.status).toBe(200);
+    expect(r.headers.get("Content-Type")).toContain("application/json");
+    expect(await r.json()).toEqual({ state: "not_recorded" });
+  });
 });

@@ -7,7 +7,10 @@ import { ShoppingCartProvider } from "./shopping-cart-context";
 import { CheckoutConfirmation } from "./checkout-confirmation";
 import { OwnedOrderView } from "../../routes/checkout-order";
 import { SHOPPING_CART_KEY } from "../../lib/commerce/shopping-cart";
-import type { OwnedCheckoutOrder } from "../../lib/commerce/checkout-flow.server";
+import type {
+  CheckoutRefundStatus,
+  OwnedCheckoutOrder,
+} from "../../lib/commerce/checkout-flow.server";
 let root: Root, host: HTMLDivElement;
 let fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
 const quote = {
@@ -48,6 +51,7 @@ async function mount(
   canPreparePayment = false,
   stripeEnabled = false,
   paypalEnabled = false,
+  refund: CheckoutRefundStatus | null = null,
 ) {
   const router = createMemoryRouter(
     [
@@ -66,6 +70,7 @@ async function mount(
         element: status ? (
           <OwnedOrderView
             order={order}
+            refund={refund}
             csrfToken={"c".repeat(64)}
             refresh={() => {}}
             canPreparePayment={canPreparePayment}
@@ -294,3 +299,26 @@ describe("final fictional order confirmation and private status UI", () => {
     expect(button("Check PayPal")).toBeDefined();
   });
 });
+
+it.each(["pending", "succeeded", "review_required"] as const)(
+  "shows private %s refund separately and hides stale payment-start controls",
+  async (state) => {
+    await mount(true, false, true, true, {
+      state,
+      amountCents: 4400,
+      refundedCents: state === "succeeded" ? 4400 : 0,
+    });
+    expect(
+      host.querySelector('section[aria-label="Your test refund"]'),
+    ).not.toBeNull();
+    expect(host.textContent).toContain(
+      state === "succeeded"
+        ? "Test refund confirmed"
+        : "Test refund needs follow-up",
+    );
+    expect(host.textContent).not.toContain("Choose one test payment method");
+    expect(host.querySelector(".stripe-checkout")).toBeNull();
+    expect(host.querySelector(".paypal-checkout")).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
+  },
+);

@@ -1,6 +1,6 @@
 # Owner packing and full-order handoff — Issue #91
 
-Status: local implementation, necessary checks and independent review completed on `codex/owner-order-fulfillment`; PR/exact-head CI and merge pending. Not a deployed service or authorization to dispatch goods. Frozen V1 remains unchanged; C follows ADR-001.
+Status: merged as PR92, main `2d08969`; exact-head CI127, independent review and merged-main CI128 passed. Not a deployed service or authorization to dispatch goods. Frozen V1 remains unchanged; C follows ADR-001.
 
 ## Owner workflow and boundaries
 

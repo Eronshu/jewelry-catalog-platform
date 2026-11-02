@@ -17,6 +17,7 @@ import {
   loadCheckoutOrder,
   checkoutHeaders,
   type OwnedCheckoutOrder,
+  type CheckoutRefundStatus,
 } from "../lib/commerce/checkout-flow.server";
 export const headers = () => checkoutHeaders;
 export const meta = () => [
@@ -39,6 +40,7 @@ export function OwnedOrderView({
   paypal = null,
   paypalReturned = false,
   paymentProvider = null,
+  refund = null,
 }: {
   order: OwnedCheckoutOrder;
   csrfToken: string;
@@ -49,6 +51,7 @@ export function OwnedOrderView({
   paypal?: OwnedPayPalPayment | null;
   paypalReturned?: boolean;
   paymentProvider?: "stripe" | "paypal" | null;
+  refund?: CheckoutRefundStatus | null;
 }) {
   const [order, setOrder] = useState(initial);
   const [operationInFlight, setOperationInFlight] = useState<
@@ -129,17 +132,41 @@ export function OwnedOrderView({
         Fictional local order · private browser session
       </p>
       <h1>
-        {order.state === "cancelled"
-          ? "Test order cancelled"
-          : order.paymentState === "succeeded"
-            ? "Test order confirmed"
-            : order.paymentState === "processing"
-              ? stripe || paypal
-                ? "Test payment in progress"
-                : "Test payment attempt recorded"
-              : "Unpaid test order"}
+        {refund
+          ? refund.state === "succeeded"
+            ? "Test refund confirmed"
+            : "Test refund needs follow-up"
+          : order.state === "cancelled"
+            ? "Test order cancelled"
+            : order.paymentState === "succeeded"
+              ? "Test order confirmed"
+              : order.paymentState === "processing"
+                ? stripe || paypal
+                  ? "Test payment in progress"
+                  : "Test payment attempt recorded"
+                : "Unpaid test order"}
       </h1>
       <p style={{ overflowWrap: "anywhere" }}>Reference: {order.id}</p>
+      {refund && (
+        <section aria-label="Your test refund">
+          <h2>
+            {refund.state === "succeeded"
+              ? "Full refund verified"
+              : refund.state === "pending"
+                ? "Refund pending"
+                : "Refund request recorded — result needs checking"}
+          </h2>
+          <p>
+            Verified refunded amount: {formatCad(refund.refundedCents)} CAD of{" "}
+            {formatCad(refund.amountCents)} CAD.
+          </p>
+          <p>
+            This is a fictional Sandbox refund. Refresh to see the recorded
+            result; contact the store if follow-up is needed. A refund request
+            is not proof that money was returned.
+          </p>
+        </section>
+      )}
       {!stripe && !paypal && order.paymentState !== "succeeded" && (
         <p>
           <strong>No payment is available or configured.</strong> Payment has
@@ -188,13 +215,15 @@ export function OwnedOrderView({
           </p>
         )}
       <p>
-        {order.state === "cancelled"
-          ? "The unpaid reservation has been released."
-          : order.paymentState === "succeeded"
-            ? "Test payment was verified and items were allocated. No real purchase or delivery is created."
-            : order.paymentState === "processing"
-              ? "Refresh to check the current test preparation. The local unpaid expiry driver does not release attempted orders."
-              : `Test reservation deadline: ${new Date(order.reserveUntil).toLocaleString()}. The local expiry driver releases eligible unpaid items. Refresh to check its result.`}
+        {refund
+          ? "Refund and stock handling are separate. No real purchase or delivery exists in this test."
+          : order.state === "cancelled"
+            ? "The unpaid reservation has been released."
+            : order.paymentState === "succeeded"
+              ? "Test payment was verified and items were allocated. No real purchase or delivery is created."
+              : order.paymentState === "processing"
+                ? "Refresh to check the current test preparation. The local unpaid expiry driver does not release attempted orders."
+                : `Test reservation deadline: ${new Date(order.reserveUntil).toLocaleString()}. The local expiry driver releases eligible unpaid items. Refresh to check its result.`}
       </p>
       <div className="checkout-order-actions">
         <button
@@ -236,46 +265,55 @@ export function OwnedOrderView({
             </button>
           )}
       </div>
-      {(stripe || paypal) && !activeProvider && order.state !== "cancelled" && (
-        <p>
-          Choose one test payment method. Once started, keep the same method and
-          order while its result is being checked.
-        </p>
-      )}
-      {stripe && activeProvider !== "paypal" && order.state !== "cancelled" && (
-        <StripeCheckout
-          order={order}
-          initial={stripe}
-          csrfToken={csrfToken}
-          returned={returned}
-          disabled={operationInFlight !== null || uncertain !== null}
-          onOrderChanged={setOrder}
-          onBusyChanged={(value) => {
-            setPaymentBusy(value);
-            if (value) {
-              setPaymentTouched(true);
-              setActiveProvider("stripe");
-            }
-          }}
-        />
-      )}
-      {paypal && activeProvider !== "stripe" && order.state !== "cancelled" && (
-        <PayPalCheckout
-          order={order}
-          initial={paypal}
-          csrfToken={csrfToken}
-          returned={paypalReturned}
-          disabled={operationInFlight !== null || uncertain !== null}
-          onOrderChanged={setOrder}
-          onBusyChanged={(value) => {
-            setPaymentBusy(value);
-            if (value) {
-              setPaymentTouched(true);
-              setActiveProvider("paypal");
-            }
-          }}
-        />
-      )}
+      {!refund &&
+        (stripe || paypal) &&
+        !activeProvider &&
+        order.state !== "cancelled" && (
+          <p>
+            Choose one test payment method. Once started, keep the same method
+            and order while its result is being checked.
+          </p>
+        )}
+      {!refund &&
+        stripe &&
+        activeProvider !== "paypal" &&
+        order.state !== "cancelled" && (
+          <StripeCheckout
+            order={order}
+            initial={stripe}
+            csrfToken={csrfToken}
+            returned={returned}
+            disabled={operationInFlight !== null || uncertain !== null}
+            onOrderChanged={setOrder}
+            onBusyChanged={(value) => {
+              setPaymentBusy(value);
+              if (value) {
+                setPaymentTouched(true);
+                setActiveProvider("stripe");
+              }
+            }}
+          />
+        )}
+      {!refund &&
+        paypal &&
+        activeProvider !== "stripe" &&
+        order.state !== "cancelled" && (
+          <PayPalCheckout
+            order={order}
+            initial={paypal}
+            csrfToken={csrfToken}
+            returned={paypalReturned}
+            disabled={operationInFlight !== null || uncertain !== null}
+            onOrderChanged={setOrder}
+            onBusyChanged={(value) => {
+              setPaymentBusy(value);
+              if (value) {
+                setPaymentTouched(true);
+                setActiveProvider("paypal");
+              }
+            }}
+          />
+        )}
       <p>
         <Link to="/checkout/confirm">Your pending orders</Link> ·{" "}
         <Link to="/cart">Your unchanged cart</Link>
@@ -291,6 +329,7 @@ export default function Order() {
     stripe?: OwnedStripePayment | null;
     paypal?: OwnedPayPalPayment | null;
     paymentProvider?: "stripe" | "paypal" | null;
+    refund?: CheckoutRefundStatus | null;
     error?: string;
   }>();
   const revalidator = useRevalidator();
@@ -312,6 +351,7 @@ export default function Order() {
           stripe={data.stripe}
           paypal={data.paypal}
           paymentProvider={data.paymentProvider}
+          refund={data.refund}
           paypalReturned={["success", "cancel"].includes(
             search.get("paypal_return") ?? "",
           )}

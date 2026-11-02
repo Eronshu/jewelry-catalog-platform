@@ -40,6 +40,11 @@ if (stockMode !== undefined && stockMode !== "1")
     "COMMERCE_LOCAL_STOCK_OPERATIONS only accepts 1 for fictional local operations.",
   );
 const stockOperations = stockMode === "1";
+const refundMode = process.env.COMMERCE_LOCAL_REFUNDS;
+if (refundMode !== undefined && refundMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_REFUNDS only accepts 1 for fictional Sandbox refunds.",
+  );
 const fulfillmentMode = process.env.COMMERCE_LOCAL_FULFILLMENT;
 if (fulfillmentMode !== undefined && fulfillmentMode !== "1")
   throw new Error(
@@ -103,6 +108,13 @@ writeFileSync(
         COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
         COMMERCE_CHECKOUT_EXPIRY: "local-test",
         COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
+        ...(refundMode === "1"
+          ? {
+              COMMERCE_OWNER_REFUND_UI: "local-test",
+              COMMERCE_OWNER_REFUND_WRITES: "local-test",
+              COMMERCE_OWNER_REFUND_QUERIES: "local-test",
+            }
+          : {}),
         ...(fulfillmentMode === "1"
           ? {
               COMMERCE_OWNER_FULFILLMENT_UI: "local-test",
@@ -192,7 +204,12 @@ for (let id = 1; id <= 3; id++) {
 }
 const seed = join(directory, "fictional.sql");
 const statements = [];
-if (preparePayment || stockOperations)
+if (
+  preparePayment ||
+  stockOperations ||
+  refundMode === "1" ||
+  fulfillmentMode === "1"
+)
   statements.push(
     `INSERT INTO commerce_payment_scope(id,mode,instance_id,stripe_account_ref,paypal_account_ref) VALUES (1,'local-test','${checkoutInstance}','fixture-stripe','fixture-paypal');`,
   );
