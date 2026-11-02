@@ -98,6 +98,9 @@ const conditions: Record<WorkspaceOrderFilter, string> = {
   all: "1=1",
   awaiting: `o.state='pending_payment' AND o.payment_state='not_started' AND NOT ${attempted}`,
   prepared: `o.state='pending_payment' AND o.payment_state='processing' AND ${attempted}`,
+  paid: "o.state='confirmed' AND o.payment_state='succeeded' AND o.fulfillment='ready_to_pack'",
+  completed:
+    "o.state='confirmed' AND o.payment_state='succeeded' AND o.fulfillment='completed'",
   cancelled: "o.state='cancelled'",
 };
 
@@ -185,6 +188,9 @@ export async function loadCommerceWorkspace(
       if (lines.results.length > 20) throw new Error("Invalid line count");
       view = {
         kind: "order",
+        canManageFulfillment:
+          Object.getOwnPropertyDescriptor(env, "COMMERCE_OWNER_FULFILLMENT_UI")
+            ?.value === "local-test",
         observedAt,
         order: order(orders.results[0] as OrderRow),
         lines: lines.results as WorkspaceLine[],

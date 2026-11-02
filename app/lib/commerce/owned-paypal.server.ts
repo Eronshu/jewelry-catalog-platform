@@ -245,7 +245,7 @@ function project(r: Row, now: number): OwnedPayPalPayment {
     r.factId &&
     r.state === "confirmed" &&
     r.paymentState === "succeeded" &&
-    r.fulfillment === "ready_to_pack"
+    ["ready_to_pack", "completed"].includes(r.fulfillment)
   )
     return { state: "paid", ...locked };
   if (
