@@ -68,6 +68,7 @@ export type WorkspaceView = (
   | { kind: "order"; order: WorkspaceOrder; lines: WorkspaceLine[] }
   | {
       kind: "inventory";
+      canManageStock?: boolean;
       items: WorkspaceStock[];
       filter: WorkspaceStockFilter;
       search: string;

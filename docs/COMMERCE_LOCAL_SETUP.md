@@ -150,6 +150,10 @@ Open `/admin/commerce` at its printed loopback URL. Its Overview/Orders/Order de
 
 The private order can expose hosted Stripe **test** payment only under explicit server configuration; default runs stay off. Preparation-only mode still sends no provider request. See [the complete boundary, private file setup, recovery limitations and pending acceptance](./COMMERCE_STRIPE_CHECKOUT.md). No real credentials or provider call was used for offline development. Existing provider-bound stock cannot be released by ordinary unpaid cancellation/expiry. The presentation-only `/stripe-checkout-preview` scene on the separate Admin shell preview has no database/provider endpoint and does not prove payment.
 
-## PayPal owned checkout / Issue #81 (under review)
+## PayPal owned checkout / Issue #81 (merged as PR #82)
 
 The default runner still has no provider transport. This feature adds an explicit private external-file opt-in, a PayPal choice on the same owned order, hosted approval, explicit capture and canonical query before confirming/allocating the same stock. It does not introduce customer accounts or save actual addresses. Read [the PayPal setup, pauses, recovery and outstanding acceptance](./COMMERCE_PAYPAL_CHECKOUT.md) before configuring any account. Safe local credentials and actual provider calls require separate user authorization; development evidence uses offline HTTP fixtures only.
+
+## Owner stock operations / Issue #83 (under review)
+
+Explicit `COMMERCE_LOCAL_STOCK_OPERATIONS=1 npm run commerce:local` prepares the default-off local inventory actions and scope independently of payments. It supplies no Admin login/bypass. Read [the four actions, safe pauses and same-request recovery](./COMMERCE_OWNER_STOCK.md). Presentation-only `/owner-stock-preview` on the separate Admin shell preview uses memory fixtures and does not verify authenticated stock writes.

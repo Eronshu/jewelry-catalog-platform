@@ -2899,3 +2899,40 @@ a {
     align-items: start;
   }
 }
+
+.owner-stock-operations {
+  max-width: 760px;
+}
+.owner-stock-operations fieldset {
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--line, #ddd);
+  padding: 18px;
+  margin: 22px 0;
+}
+.owner-stock-operations label:not(.owner-stock-confirm) {
+  display: grid;
+  gap: 8px;
+}
+.owner-stock-operations input:not([type="checkbox"]),
+.owner-stock-operations select,
+.owner-stock-operations button {
+  min-height: 44px;
+  max-width: 100%;
+}
+.owner-stock-operations .owner-stock-confirm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.owner-stock-operations [role="status"] {
+  overflow-wrap: anywhere;
+}
+.owner-stock-operations fieldset {
+  min-inline-size: 0;
+}
+.owner-stock-operations select {
+  width: 100%;
+  min-width: 0;
+}

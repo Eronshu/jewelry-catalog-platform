@@ -25,6 +25,7 @@ import * as ReviewRoute from "./admin-commerce-review";
 import * as ScreenRoute from "./admin-commerce-reservations";
 import * as RecoverRoute from "./admin-commerce-recover";
 import * as WorkspaceRoute from "./admin-commerce";
+import * as OwnerStockRoute from "./admin-commerce-stock-command";
 import * as WorkspaceOrdersRoute from "./admin-commerce-orders";
 import handleDocument from "../entry.server";
 import { applyStockCommand } from "../lib/commerce/inventory.server";
@@ -76,6 +77,11 @@ const workspaceOrders = {
   path: "admin/commerce/orders",
   module: WorkspaceOrdersRoute,
 };
+const ownerStock = {
+  id: "routes/admin-commerce-stock",
+  path: "admin/commerce/inventory/:variantId/commands",
+  module: OwnerStockRoute,
+};
 const handler = createRequestHandler(
   {
     entry: { module: { default: handleDocument } },
@@ -85,12 +91,13 @@ const handler = createRequestHandler(
       [recovery.id]: recovery,
       [workspace.id]: workspace,
       [workspaceOrders.id]: workspaceOrders,
+      [ownerStock.id]: ownerStock,
     },
     assets: {
       entry: { imports: [], module: "/entry.js" },
       routes: {
         ...Object.fromEntries(
-          [workspace, workspaceOrders].map((item) => [
+          [workspace, workspaceOrders, ownerStock].map((item) => [
             item.id,
             {
               id: item.id,
@@ -455,6 +462,7 @@ describe("Worker → React Router reservation-review authorization", () => {
     "/admin/commerce/orders",
     "/admin/commerce/orders/order-11111111-1111-4111-8111-111111111111.data",
     "/admin/commerce/inventory",
+    "/admin/commerce/inventory/fictional-gold.data",
     "/admin/commerce/reservations",
     "/admin/commerce/review.data",
     "/admin/commerce/reservations/recover",
@@ -1198,6 +1206,106 @@ describe("Worker → React Router read-only receipts on real isolated D1", () =>
     );
     expect(method.status).toBe(405);
     expect(method.headers.get("Allow")).toBe("GET");
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+});
+
+describe("Worker → React Router owner stock write boundary", () => {
+  const fields = () =>
+    new URLSearchParams({
+      intent: "apply",
+      requestId: "22222222-2222-4222-8222-222222222222",
+      operation: "receive",
+      quantity: "1",
+      variantVersion: "1",
+      onHand: "10",
+      facebookReserved: "0",
+      checkoutReserved: "2",
+      allocated: "3",
+      acknowledge: "true",
+    });
+  async function stockRequest(
+    database: object,
+    assertion?: string,
+    options: {
+      enabled?: boolean;
+      writes?: boolean;
+      method?: string;
+      origin?: string;
+      body?: string;
+      path?: string;
+    } = {},
+  ) {
+    const method = options.method ?? "POST";
+    return handleWorkerRequest(
+      new Request(
+        origin + (options.path ?? "/admin/commerce/inventory/gold-1/commands"),
+        {
+          method,
+          headers: {
+            ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+            Origin: options.origin ?? origin,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          ...(method === "GET" || method === "HEAD"
+            ? {}
+            : { body: options.body ?? fields().toString() }),
+        },
+      ),
+      {
+        ...env(database),
+        ...(options.enabled === false
+          ? {}
+          : { COMMERCE_OWNER_STOCK_UI: "local-test" }),
+        ...(options.writes === false
+          ? {}
+          : { COMMERCE_OWNER_STOCK_WRITES: "local-test" }),
+      } as Env,
+      {} as ExecutionContext,
+      handler,
+    );
+  }
+  it("denies missing, unapproved and service identities before any stock access", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn();
+    for (const [assertion, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "unapproved" }), 403],
+      [await jwt({ common_name: "service" }), 401],
+    ] as const)
+      expect((await stockRequest({ prepare, batch }, assertion)).status).toBe(
+        status,
+      );
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("keeps default-off, Origin, paused writes and exact form rejection ahead of stock storage", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn(),
+      assertion = await jwt();
+    const bad = fields();
+    bad.set("operation", "release");
+    const extra = fields();
+    extra.set("customerEmail", "person@example.invalid");
+    for (const [options, status] of [
+      [{ enabled: false }, 404],
+      [{ method: "GET" }, 405],
+      [{ method: "HEAD" }, 405],
+      [{ writes: false }, 503],
+      [{ origin: "http://127.0.0.1:8999" }, 404],
+      [{ body: bad.toString() }, 422],
+      [{ body: extra.toString() }, 422],
+      [{ path: "/admin/commerce/inventory/gold-1/commands?unsafe=1" }, 422],
+    ] as const) {
+      const response = await stockRequest(
+        { prepare, batch },
+        assertion,
+        options,
+      );
+      expect(response.status).toBe(status);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
     expect(prepare).not.toHaveBeenCalled();
     expect(batch).not.toHaveBeenCalled();
   });

@@ -10,6 +10,7 @@ import { PreviewForm, PreviewLinks, previewFormRoute } from "./preview-form";
 import { ProductPhotos } from "../../app/components/admin/product-photos";
 import { reservationPreviewRoute } from "./reservations";
 import { commerceWorkspacePreviewRoutes } from "./commerce-workspace";
+import { OwnerStockPreview } from "./owner-stock";
 import { StripeCheckoutPreview } from "./stripe-checkout";
 
 const fixtureImages = [
@@ -151,6 +152,11 @@ function PreviewList() {
 const router = createBrowserRouter([
   { path: "/stripe-checkout-preview", element: <StripeCheckoutPreview /> },
   ...commerceWorkspacePreviewRoutes,
+  { path: "/owner-stock-preview", Component: OwnerStockPreview },
+  {
+    path: "/admin/commerce/inventory/preview-owner-stock",
+    Component: OwnerStockPreview,
+  },
   reservationPreviewRoute,
   {
     path: "/",

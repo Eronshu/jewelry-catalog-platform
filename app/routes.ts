@@ -26,6 +26,14 @@ export default [
   route("admin/commerce/orders", "routes/admin-commerce-orders.tsx"),
   route("admin/commerce/orders/:orderId", "routes/admin-commerce-order.tsx"),
   route("admin/commerce/inventory", "routes/admin-commerce-inventory.tsx"),
+  route(
+    "admin/commerce/inventory/:variantId/commands",
+    "routes/admin-commerce-stock-command.ts",
+  ),
+  route(
+    "admin/commerce/inventory/:variantId",
+    "routes/admin-commerce-stock.tsx",
+  ),
   route("admin/commerce/review", "routes/admin-commerce-review.ts"),
   route(
     "admin/commerce/reservations/recover",
