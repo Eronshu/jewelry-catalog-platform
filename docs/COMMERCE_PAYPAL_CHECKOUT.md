@@ -1,6 +1,13 @@
 # Owned PayPal Sandbox checkout — Issue #81
 
-Status: merged as PR #82 (`7c56c60`); accurate-head CI117, independent review and main CI118 passed. Not provider-accepted. ADR-001 and frozen V1 remain unchanged. Default configuration is off. No actual account/API authentication, approval, capture or webhook delivery was tested.
+Status: merged as PR #82 (`7c56c60`); accurate-head CI117, independent review and main CI118 passed. Actual Sandbox OAuth authentication passed on2026-11-02 and the user confirmed the application/Business-test-account association. Approval, capture and webhook delivery remain unverified. ADR-001 and frozen V1 remain unchanged. Default configuration is off.
+
+Issue #85 repairs the same Worker-only transport defect found during the first
+actual Stripe attempt: `redirect: "error"` is not supported by Workers. PayPal
+now uses `manual`, retaining the fixed Sandbox host and explicit rejection of
+non-2xx/redirected responses. A real workerd regression intercepts all outbound
+traffic and verifies that an OAuth redirect cannot forward credentials. This is
+a runtime regression, not an actual PayPal hosted-payment acceptance result.
 
 ## Visible flow and shared authority
 

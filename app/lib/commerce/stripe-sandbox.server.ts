@@ -353,7 +353,9 @@ async function request(
   const work = async () => {
     const response = await fetcher(`https://api.stripe.com${path}`, {
       method: body ? "POST" : "GET",
-      redirect: "error",
+      // Workers rejects "error" before sending. Manual keeps credentials on the
+      // fixed host; the non-2xx check below rejects redirects without following.
+      redirect: "manual",
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${c.testSecretKey}`,

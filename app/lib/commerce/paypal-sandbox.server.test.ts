@@ -150,7 +150,7 @@ describe("PayPal Sandbox transport", () => {
     expect(new Headers(sent.headers).get("Authorization")).toBe(
       `Bearer ${credential("2")}`,
     );
-    expect(sent.redirect).toBe("error");
+    expect(sent.redirect).toBe("manual");
     const body = JSON.parse(sent.body as string);
     expect(body).toEqual({
       intent: "CAPTURE",

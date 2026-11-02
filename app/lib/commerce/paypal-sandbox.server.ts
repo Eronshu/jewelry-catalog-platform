@@ -277,7 +277,9 @@ async function request(
   const work = async () => {
     const response = await fetcher(`${ORIGIN}${path}`, {
       method: body !== undefined ? "POST" : "GET",
-      redirect: "error",
+      // Workers rejects "error" before sending. Reject 3xx below instead of
+      // following a redirect that could forward the OAuth/API credentials.
+      redirect: "manual",
       signal: controller.signal,
       headers: {
         Authorization: authorization,
