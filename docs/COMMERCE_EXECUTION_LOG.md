@@ -450,3 +450,14 @@
 最终完整format/lint/生成project+fixture typecheck、89文件1584项应用测试（130.21秒）、6项离线HTTP模拟、生产build/Admin资产保护通过。最终CSS收缩修正与证据文档另做范围格式检查，不重跑无变化业务测试。独立最终CSS blob `0f0a03864329d66e5c468298aa87927e518c360e`复审无问题；其余核心/权限/UI运行blob保持已审快照。
 
 stock-only编译runner1505用新虚构state `jewelry-commerce-local-E4JAQx`启动，未启用任何provider；真实本地D1查询确认scope为local-test、owner_commands为0，证明不依赖preparePayment的seed分支。额外终端HTTP探测被执行沙箱的socket权限拒绝，不计作401/授权HTTP证据；权限正反路径证据来自前述签名JWT/Worker/Router/D1测试。runner随后停止、临时state保留，不冒称恢复或实际授权浏览器；用户5193表现预览继续保留。
+
+## 2026-11-02：PR #84 收口与首次实际 Sandbox / Issue #85
+
+- **库存收口：**用户明确授权公开上传原26个已提交文件后，正常连接器发布成功。PR84准确head `f46953feca08eeb81ef4c3319e00431e83fe04c9` 的CI119/run41399562129通过，既有独立实际审查的13个运行blob再次核对一致；合并前reviews/threads/comments无未解。合并main `a210f46f981d3276b9ac7f0c3d7cc0ddf96f4372` 的tree `6b505d75b188daf6ea42bb5c425d03c619631c75`等于验收树，mainCI120/run41400522838成功。完整根/core历史bundle验证后清理干净本地refs/临时工作树，main已快进；远程分支删除通道不支持，未执行删除。
+- **实际测试授权：**用户在仓库外0600文件安全配置两家Sandbox，明确授权虚构商品/资料/测试支付方式的建单、付款、取消、失败、返回和库存核对，并确认PayPal应用与Business测试账户对应。两家实际只读认证成功；Stripe账户匹配CA/CAD，但charges_enabled=false/card_payments inactive，原因未建立，不据此要求启用正式账户。OAuth成功不等于付款验收。未启用真实收款、真实资料、生产或部署。
+- **首次实际执行：**从商品→原购物车Orbit Gold-tone一件→虚构邮寄报价CAD44→固定虚构Ontario确认→私有订单→Stripe start。订单持久化processing和唯一派发，页面review_required且无托管链接；仅只读匹配本次原订单/attempt/时间窗口的canonical Session列表，结果无匹配且无下一页。原订单/attempt/预留保留，无CREATE重放、强制释放或收款事实；stock为physical5/FB1/checkout1/allocated0。runner正常停止并核实生成.dev.vars已删除，虚构状态目录及安全恢复记录保留。购物车未改动；没有输入任何卡资料。
+- **实际缺陷与修复：**Cloudflare官方Request说明和真实workerd回归证实，redirect:error在构造请求时失败，尚未触达出站。Node模拟不能证明这一运行时行为。两家适配器改manual并保留固定主机、非2xx/redirected拒绝及全部金额/幂等/库存边界；不跟随重定向或向目标转发认证。新回归直接转译原模块由workerd执行，全出站拦截，修复前两例calls为空而失败、修复后两例通过；合计46项受影响测试通过。Miniflare仅将原已锁定/安装版本声明为直接开发依赖，无包升级或新服务。
+- **审查与检查：**独立worker_redirect_review实际读取上述改动并独立运行2项workerd测试通过，无未解决发现；实际模型设置无法读取，不推断。format/lint/生成project+fixture typecheck、6项离线支付模拟和生产build/Admin保护通过。首次完整应用测试遇本机回环连接EADDRNOTAVAIL，不能记成通过；仅用maxWorkers=2重验该失败阶段，90文件1586项通过（130.90秒）；没有重复无变化的其他检查。普通npm缓存写入被本机权限拒绝，未执行其建议的sudo/chown；锁文件仅增加现有版本的根依赖声明。
+- **剩余门槛：**修复还需当前head完整检查、PR/CI及审查流程；随后继续真实托管付款/返回/canonical收款和原子库存分配。当前没有实际付款、PayPal批准/capture、真实签名事件、Safari/VoiceOver、经营UAT或营业验收通过。不会把此次受控出站回归当作真实服务商端到端结果。
+
+- **修复后实际复验：**新的隔离实例走Orbit Gold×2 + Bar Silver×1→虚构Ontario邮寄CAD99→独立私有订单→一次Stripe start。仍显示review_required、没有托管链接；只读canonical列表HTTP200、无匹配且无下一页。当前尚未定位该次失败原因，不能归因于账户flag，也不能声称redirect修复已完成真实付款。保留唯一派发、原键、processing订单及三件checkout预留，capture事实为0、allocated为0；未重复CREATE或强释库存。移除本轮新增Bar项、恢复原Orbit×2购物车后正常停止runner95460，生成.dev.vars不存在，两个实例和最小安全恢复记录保留。未输入卡资料或改变商家账户；没有真实支付成功/失败卡/取消/返回/事件验收。

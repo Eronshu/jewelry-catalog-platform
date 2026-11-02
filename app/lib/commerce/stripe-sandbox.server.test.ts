@@ -160,7 +160,7 @@ describe("isolated Stripe Sandbox transport", () => {
     expect(first.body).toBe(retry.body);
     expect(first).toMatchObject({
       method: "POST",
-      redirect: "error",
+      redirect: "manual",
       headers: {
         Authorization: `Bearer ${config.testSecretKey}`,
         "Stripe-Version": version,
@@ -558,7 +558,7 @@ describe("canonical Stripe Sandbox capture", () => {
     for (const [, init] of call.mock.calls) {
       expect(init.method).toBe("GET");
       expect(init.body).toBeUndefined();
-      expect(init.redirect).toBe("error");
+      expect(init.redirect).toBe("manual");
       expect(new Headers(init.headers).get("Stripe-Version")).toBe(version);
       expect(new Headers(init.headers).get("Authorization")).toBe(
         `Bearer ${config.testSecretKey}`,

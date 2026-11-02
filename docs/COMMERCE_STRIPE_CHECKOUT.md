@@ -38,8 +38,35 @@ Server bindings are `COMMERCE_STRIPE_SANDBOX=local-test`, `COMMERCE_STRIPE_NEW_S
 
 ## Verification and rollout gates
 
+### 2026-11-02: first actual Sandbox attempt and Worker transport repair (#85)
+
+The user configured a private external test file and explicitly authorized actual
+Sandbox tests. Read-only authentication passed, including the configured account,
+Canada and CAD checks. `charges_enabled=false` and an inactive card capability
+were observed; this does not establish the cause of a failed Sandbox payment or
+authorize activating a live account.
+
+The compiled local journey reached a private fictional CAD44 shipping order.
+Its first Stripe start retained one stock reservation but produced no hosted
+link. A bounded canonical read found no matching Session. A real workerd
+regression then reproduced that `redirect: "error"` throws before outbound
+transport; Node HTTP fixtures had missed this runtime difference. The adapter now
+uses `manual` and still rejects every non-2xx or redirected response without
+following it. See [Cloudflare's Request contract](https://developers.cloudflare.com/workers/runtime-apis/request/).
+
+The first attempt and its protected inventory remain preserved; it was not
+replayed, cancelled or declared paid. No card was submitted. Successful hosted
+payment, decline/cancellation, canonical allocation and genuine event delivery
+remain unverified. A second independent instance using the repaired Worker reached
+a fictional CAD99 multi-item shipping order, but again produced no hosted link.
+A bounded canonical list returned no matching Session. The cause of this second
+failure is not established; its one dispatch, original key and three protected
+items are preserved, with no capture fact or allocation. The runner was stopped
+normally and the pre-existing cart restored; neither attempt was replayed.
+
 Offline adapter tests, real temporary D1 migration/concurrency tests, HTTP authorization/resource tests, UI duplicate/unknown/return tests, lint, generated typecheck, production build, exact-head CI and completed independent financial/stock/permission review are required for this PR. Evidence is recorded in the execution log only after it actually passes.
 
-Still required separately: safe local credentials/authorization; actual Sandbox success, decline/authentication, cancellation, missing-return, signed-event and late-event recovery; provider account/amount comparison; iPhone Safari and VoiceOver; owner UAT; persistent background reconciliation/monitoring/restart recovery; refunds/disputes/notifications; real business/tax/privacy rules; distinct nonproduction/production resources and explicit release authorization. HTTP fixtures do not check any of those boxes. No live payments, merchant-account operations or deployment are authorized by this document.
+Safe local credentials and explicit fictional Sandbox authorization are now present.
+Still required separately: actual Sandbox success, decline/authentication, cancellation, missing-return, signed-event and late-event recovery; provider account/amount comparison; iPhone Safari and VoiceOver; owner UAT; persistent background reconciliation/monitoring/restart recovery; refunds/disputes/notifications; real business/tax/privacy rules; distinct nonproduction/production resources and explicit release authorization. HTTP fixtures do not check any of those boxes. No live payments, merchant-account operations or deployment are authorized by this document.
 
 Official API references checked during implementation: [Session create](https://docs.stripe.com/api/checkout/sessions/create), [Session retrieve](https://docs.stripe.com/api/checkout/sessions/retrieve), [metadata propagation](https://docs.stripe.com/metadata), [PaymentIntent](https://docs.stripe.com/api/payment_intents/object), [Charge](https://docs.stripe.com/api/charges/object), [idempotent requests](https://docs.stripe.com/api/idempotent_requests). Current code pins its API version; capabilities must still be confirmed in the actual Sandbox. No fees, legal conclusions or provider qualification guarantees are asserted here.
