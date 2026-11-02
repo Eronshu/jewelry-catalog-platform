@@ -32,6 +32,13 @@ import { stripeRuntimeConfig } from "./stripe-runtime-config.server";
 import { readOwnedStripePayment } from "./owned-stripe.server";
 import { paypalRuntimeConfig } from "./paypal-runtime-config.server";
 import { readOwnedPayPalPayment } from "./owned-paypal.server";
+import { readOwnerRefund } from "./owner-refund.server";
+import type { OwnerRefundState } from "./owner-refund";
+export type CheckoutRefundStatus = {
+  state: OwnerRefundState;
+  amountCents: number;
+  refundedCents: number;
+};
 
 export const checkoutHeaders = {
   "Cache-Control": "private, no-store",
@@ -383,9 +390,31 @@ export async function loadCheckoutOrder(
             id,
           )
         : null;
+    // Existing refund history is independent of the Admin UI/write opt-ins.
+    // Probe only after this browser has proved ownership of the scoped order.
+    const hasRefund = await env.DB.prepare(
+      "SELECT 1 AS present FROM commerce_owner_refund_intents WHERE order_id=? AND mode=? AND instance_id=?",
+    )
+      .bind(id, config.mode, config.instanceId)
+      .first();
+    const refundDetail = hasRefund
+      ? await readOwnerRefund(
+          env.DB,
+          { mode: config.mode, instanceId: config.instanceId },
+          id,
+        )
+      : null;
+    const refund: CheckoutRefundStatus | null = refundDetail?.requestId
+      ? {
+          state: refundDetail.state,
+          amountCents: refundDetail.amountCents,
+          refundedCents: refundDetail.refundedCents,
+        }
+      : null;
     return json({
       csrfToken: session.csrfToken,
       order,
+      refund,
       canPreparePayment:
         !stripeConfig &&
         !paypalConfig &&

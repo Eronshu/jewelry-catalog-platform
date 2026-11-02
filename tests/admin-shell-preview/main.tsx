@@ -1,3 +1,4 @@
+import { OwnerRefundPreview } from "./owner-refund";
 import { OwnerFulfillmentPreview } from "./owner-fulfillment";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, RouterProvider } from "react-router";
@@ -154,6 +155,7 @@ const router = createBrowserRouter([
   { path: "/stripe-checkout-preview", element: <StripeCheckoutPreview /> },
   ...commerceWorkspacePreviewRoutes,
   { path: "/owner-stock-preview", Component: OwnerStockPreview },
+  { path: "/owner-refund-preview", Component: OwnerRefundPreview },
   { path: "/owner-fulfillment-preview", Component: OwnerFulfillmentPreview },
   {
     path: "/admin/commerce/inventory/preview-owner-stock",

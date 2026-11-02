@@ -68,6 +68,7 @@ export type WorkspaceView = (
   | {
       kind: "order";
       canManageFulfillment?: boolean;
+      canManageRefund?: boolean;
       order: WorkspaceOrder;
       lines: WorkspaceLine[];
     }

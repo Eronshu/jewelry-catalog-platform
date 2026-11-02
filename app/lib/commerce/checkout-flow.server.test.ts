@@ -23,6 +23,7 @@ import * as StripeRoute from "../../routes/checkout-order-stripe";
 import * as StripeWebhookRoute from "../../routes/checkout-stripe-webhook";
 import { actStripeCheckout, actStripeWebhook } from "./stripe-checkout.server";
 import { STRIPE_SANDBOX_API_VERSION } from "./stripe-sandbox.server";
+import { startOwnerStripeRefund } from "./owner-refund.server";
 import {
   loadCheckoutConfirmation,
   actCheckoutConfirmation,
@@ -978,6 +979,60 @@ describe("visible customer order flow on real temporary D1", () => {
         .bind(created.orderId)
         .first(),
     ).toEqual({ n: 1 });
+    // A refund remains visible to its customer even with every Admin refund flag off.
+    const refundRequestId = crypto.randomUUID();
+    const refundReceipt = await startOwnerStripeRefund(
+      db,
+      { mode: "local-test", instanceId: instance },
+      { email: "owner@example.invalid", sub: "fictional-owner" },
+      {
+        requestId: refundRequestId,
+        orderId: created.orderId,
+        expectedVersion: 3,
+        acknowledge: true,
+      },
+      {
+        enabled: true,
+        mode: "local-test",
+        instanceId: instance,
+        canonicalOrigin: origin,
+        expectedAccountId: "acct_FictionalRoute123",
+        testSecretKey: ["sk", "test", "0".repeat(24)].join("_"),
+      },
+      async () => {
+        throw new Error("Synthetic account lookup outage; no actual provider");
+      },
+      () => now + 1,
+    );
+    expect(refundReceipt.state).toBe("review_required");
+    const refundStatus = await loadCheckoutOrder(
+      get(`/checkout/orders/${created.orderId}`, client.cookie),
+      settings(),
+      created.orderId,
+    );
+    expect(refundStatus.status).toBe(200);
+    const refundBody = (await refundStatus.json()) as {
+      refund: Record<string, unknown>;
+    };
+    expect(refundBody.refund).toEqual({
+      state: "review_required",
+      amountCents: 4400,
+      refundedCents: 0,
+    });
+    expect(JSON.stringify(refundBody)).not.toContain(refundRequestId);
+    expect(JSON.stringify(refundBody)).not.toMatch(
+      /actor_hash|charge_id|payment_intent_id|operation_key/,
+    );
+    const stranger = await browser();
+    expect(
+      (
+        await loadCheckoutOrder(
+          get(`/checkout/orders/${created.orderId}`, stranger.cookie),
+          settings(),
+          created.orderId,
+        )
+      ).status,
+    ).toBe(404);
   });
   it("rejects disabled, foreign-owner, client-supplied amounts, CSRF and bad signatures before provider dispatch", async () => {
     const client = await browser(),

@@ -256,6 +256,14 @@ function OrderDetail({
             Packing, handoff and history
           </Link>
         )}
+        {view.canManageRefund && (
+          <Link
+            className="admin-primary-link"
+            to={`${base}/orders/${encodeURIComponent(order.reference)}/refund`}
+          >
+            Refund status and test refund
+          </Link>
+        )}
         <p className="commerce-workspace-muted">
           Reservation deadline: <Time value={order.reserveUntil} />. A past
           deadline alone does not prove that stock was released.

@@ -33,6 +33,14 @@ export default [
     "admin/commerce/orders/:orderId/fulfillment",
     "routes/admin-commerce-fulfillment.tsx",
   ),
+  route(
+    "admin/commerce/orders/:orderId/refund/commands",
+    "routes/admin-commerce-refund-command.ts",
+  ),
+  route(
+    "admin/commerce/orders/:orderId/refund",
+    "routes/admin-commerce-refund.tsx",
+  ),
   route("admin/commerce/inventory", "routes/admin-commerce-inventory.tsx"),
   route(
     "admin/commerce/inventory/:variantId/commands",
