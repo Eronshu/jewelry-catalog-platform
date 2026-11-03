@@ -550,3 +550,11 @@ stock-only编译runner1505用新虚构state `jewelry-commerce-local-E4JAQx`启�
 最终整合检查：format/lint/generated Worker+route project/fixture TypeScript、103文件1823应用测试（173.49秒）、6离线HTTP模拟、生产build/Admin资产保护全部通过。此全套已含根5UI、7HTTP及新增4Worker→Router权限边界；没有重复无变化全套。首轮只在中断前的UI旧fixture留有handed_over/canRelease=true自相矛盾测试props，续作已改成未handoff/physical5/allocated1，运行逻辑未变并随全套通过。没有读真实配置或调用provider。最终仅证据docs增量，需复核后提交准确发布树，PR/CI未完成不提前记成功。
 
 allocation-release-only compiledrunner8799在新虚构state`jewelry-commerce-local-43Dyz5`启动，无provider配置；只读核scope1/local-test、release_commands0，Admin未配置GET503失败关闭，不计真实授权浏览器成功。runner65664随后Ctrl-C正常停止，state与本次expiry capability私有文件保留，无服务商secret；5193原用户表现预览未停止。新功能只在虚构D1/合成JWT及paused预览验证，没有更改两笔实际Sandbox退款单/未知付款hold。
+
+## 2026-11-03：Issue #101 交付回滚集成用例的独立预算
+
+PR100准确head`d680b2b590972d417431ed3367a1ec73a53a1400`的CI136/run41601997371和独立实际审查通过后，按委托合并main`bedd2ebd109266d5920e2cf1d0b349eff6949611`，tree`01a32d94a22c265869e538b403ff4cae84389da8`与验收/发布/root源一致。gate6598856211/post6598868059。两完整源及114独有核心生成文件已逐SHA验证归档后清理干净树/refs、main快进；远程删除不支持未执行。随后mainCI137/run41603152807只有既有owner-fulfillment.server.test.ts:929的六种IGNORE回滚集成用例超过默认5000ms，1822/1823项通过（整套417.16秒），无业务断言失败；未将main记成通过，后续经营功能暂不开始。
+
+从当前更新main建立独立codex/fulfillment-rollback-test-budget，只为这一个真实D1多行、多类失败且逐轮全历史比较的用例设30000ms预算。原六种command/movement/balance/line/order/parent写入忽略、全部历史相等和最终完整handoff/两库存断言一字不改；没有运行代码、迁移、SQL guard、全局testTimeout、job timeout、自动重试或provider变动，不跳过测试，不用重复rerun刷绿。实际必要检查/独立复核/准确headCI结果完成后另记。全部原Sandboxstate/键/回执及5193用户预览保持。
+
+本修复完整format/lint/generated project+fixture TypeScript、目标交付D1文件10项（12.39秒）、6离线HTTP模拟、生产build/Admin保护通过；未重复其余无变化应用测试，准确headCI将覆盖整套。独立contract_review实际核两文件head`9c7358f2a83f4cd36f683bc9aad1c61bc535e640`，test blob`f6e83d0995eacbe8456fc9b778696e50d1c8d7bb`，所有六类/完整历史及最终两个SKU断言不变，仅本it30000ms，无未解；审查者未重跑测试/调用provider，实际模型不可读。最后仅本证据文字增量，CI尚待结果。
