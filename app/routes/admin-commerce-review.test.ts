@@ -28,6 +28,8 @@ import * as WorkspaceRoute from "./admin-commerce";
 import * as OwnerStockRoute from "./admin-commerce-stock-command";
 import * as OwnerFulfillmentRoute from "./admin-commerce-fulfillment-command";
 import * as OwnerRefundRoute from "./admin-commerce-refund-command";
+import * as OwnerReturnRoute from "./admin-commerce-return-command";
+import * as OwnerReturnPageRoute from "./admin-commerce-return";
 import * as OwnerFulfillmentPageRoute from "./admin-commerce-fulfillment";
 import * as WorkspaceOrdersRoute from "./admin-commerce-orders";
 import handleDocument from "../entry.server";
@@ -100,6 +102,16 @@ const ownerRefund = {
   path: "admin/commerce/orders/:orderId/refund/commands",
   module: OwnerRefundRoute,
 };
+const ownerReturn = {
+  id: "routes/admin-commerce-return-command",
+  path: "admin/commerce/orders/:orderId/return/commands",
+  module: OwnerReturnRoute,
+};
+const ownerReturnPage = {
+  id: "routes/admin-commerce-return",
+  path: "admin/commerce/orders/:orderId/return",
+  module: OwnerReturnPageRoute,
+};
 const handler = createRequestHandler(
   {
     entry: { module: { default: handleDocument } },
@@ -113,6 +125,8 @@ const handler = createRequestHandler(
       [ownerFulfillment.id]: ownerFulfillment,
       [ownerFulfillmentPage.id]: ownerFulfillmentPage,
       [ownerRefund.id]: ownerRefund,
+      [ownerReturn.id]: ownerReturn,
+      [ownerReturnPage.id]: ownerReturnPage,
     },
     assets: {
       entry: { imports: [], module: "/entry.js" },
@@ -139,6 +153,8 @@ const handler = createRequestHandler(
             ownerStock,
             ownerFulfillment,
             ownerFulfillmentPage,
+            ownerReturn,
+            ownerReturnPage,
           ].map((item) => [
             item.id,
             {
@@ -1617,5 +1633,126 @@ describe("Worker to Router isolated refund boundary", () => {
     expect(r.status).toBe(200);
     expect(r.headers.get("Content-Type")).toContain("application/json");
     expect(await r.json()).toEqual({ state: "not_recorded" });
+  });
+});
+
+describe("Worker to Router isolated return boundary", () => {
+  const orderId = "order-33333333-3333-4333-8333-333333333333";
+  const fields = () =>
+    new URLSearchParams({
+      intent: "apply",
+      requestId: "22222222-2222-4222-8222-222222222222",
+      operation: "inspect_sellable",
+      expectedVersion: "5",
+      expectedStockHash: "a".repeat(64),
+      acknowledge: "true",
+    });
+  async function send(
+    database: object,
+    assertion?: string,
+    options: {
+      enabled?: boolean;
+      writes?: boolean;
+      body?: string;
+      origin?: string;
+      method?: string;
+    } = {},
+  ) {
+    const method = options.method ?? "POST";
+    return handleWorkerRequest(
+      new Request(
+        `${origin}/admin/commerce/orders/${orderId}/return/commands`,
+        {
+          method,
+          headers: {
+            ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+            Origin: options.origin ?? origin,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          ...(method === "GET"
+            ? {}
+            : { body: options.body ?? fields().toString() }),
+        },
+      ),
+      {
+        ...env(database),
+        ...(options.enabled === false
+          ? {}
+          : { COMMERCE_OWNER_RETURN_UI: "local-test" }),
+        ...(options.writes === false
+          ? {}
+          : { COMMERCE_OWNER_RETURN_WRITES: "local-test" }),
+      } as Env,
+      {} as ExecutionContext,
+      handler,
+    );
+  }
+  it("denies non-human/unapproved/missing identities before return data access", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn();
+    for (const [assertion, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "unapproved" }), 403],
+      [await jwt({ common_name: "service" }), 401],
+    ] as const)
+      expect((await send({ prepare, batch }, assertion)).status).toBe(status);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("denies default-off, foreign origin, writes-paused and caller stock quantities before DB access", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn(),
+      assertion = await jwt(),
+      extra = fields();
+    extra.set("quantity", "100");
+    for (const [options, status] of [
+      [{ enabled: false }, 404],
+      [{ origin: "http://127.0.0.1:8999" }, 404],
+      [{ writes: false }, 503],
+      [{ method: "GET" }, 405],
+      [{ body: extra.toString() }, 422],
+    ] as const) {
+      const response = await send({ prepare, batch }, assertion, options);
+      expect(response.status).toBe(status);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("returns original-request lookup as private JSON while writes are paused", async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: vi.fn().mockReturnThis(),
+      first: vi.fn(async () =>
+        sql.includes("FROM commerce_payment_scope") ? { ok: 1 } : null,
+      ),
+    }));
+    const body = fields();
+    body.set("intent", "lookup");
+    const response = await send({ prepare }, await jwt(), {
+      writes: false,
+      body: body.toString(),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    expect(await response.json()).toEqual({ state: "not_recorded" });
+  });
+  it("retains a missing order's404 in the page ErrorBoundary", async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: vi.fn().mockReturnThis(),
+      first: vi.fn(async () =>
+        sql.includes("FROM commerce_payment_scope") ? { ok: 1 } : null,
+      ),
+    }));
+    const response = await handleWorkerRequest(
+      new Request(`${origin}/admin/commerce/orders/${orderId}/return`, {
+        headers: { "Cf-Access-Jwt-Assertion": await jwt() },
+      }),
+      { ...env({ prepare }), COMMERCE_OWNER_RETURN_UI: "local-test" } as Env,
+      {} as ExecutionContext,
+      handler,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).toContain("Test return page unavailable");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   });
 });

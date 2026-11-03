@@ -45,6 +45,11 @@ if (refundMode !== undefined && refundMode !== "1")
   throw new Error(
     "COMMERCE_LOCAL_REFUNDS only accepts 1 for fictional Sandbox refunds.",
   );
+const returnMode = process.env.COMMERCE_LOCAL_RETURNS;
+if (returnMode !== undefined && returnMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_RETURNS only accepts 1 for fictional local inspections.",
+  );
 const fulfillmentMode = process.env.COMMERCE_LOCAL_FULFILLMENT;
 if (fulfillmentMode !== undefined && fulfillmentMode !== "1")
   throw new Error(
@@ -108,6 +113,12 @@ writeFileSync(
         COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
         COMMERCE_CHECKOUT_EXPIRY: "local-test",
         COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
+        ...(returnMode === "1"
+          ? {
+              COMMERCE_OWNER_RETURN_UI: "local-test",
+              COMMERCE_OWNER_RETURN_WRITES: "local-test",
+            }
+          : {}),
         ...(refundMode === "1"
           ? {
               COMMERCE_OWNER_REFUND_UI: "local-test",
@@ -207,6 +218,7 @@ const statements = [];
 if (
   preparePayment ||
   stockOperations ||
+  returnMode === "1" ||
   refundMode === "1" ||
   fulfillmentMode === "1"
 )

@@ -188,6 +188,9 @@ export async function loadCommerceWorkspace(
       if (lines.results.length > 20) throw new Error("Invalid line count");
       view = {
         kind: "order",
+        canManageReturn:
+          Object.getOwnPropertyDescriptor(env, "COMMERCE_OWNER_RETURN_UI")
+            ?.value === "local-test",
         canManageRefund:
           Object.getOwnPropertyDescriptor(env, "COMMERCE_OWNER_REFUND_UI")
             ?.value === "local-test",

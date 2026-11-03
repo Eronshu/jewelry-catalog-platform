@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-10-30: #76 owned payment preparation is merged at main `a84ae05`; exact-head CI111, independent review and main CI112 passed. Current Issue #77 adds the protected owner workspace with owned orders and stock views. It is read only and local only. No provider request/hosted Session or paid order flow exists yet. Actual Sandbox, arbitrary customer data, Safari/UAT and business readiness remain separate gates.
+Status checked 2026-11-02: main `e4e34a5` includes both hosted Sandbox payment paths and full-refund paths, each with an actual fictional CAD44 happy-path acceptance. Owner stock operations and whole-order packing/handoff are merged. Issue #97 adds separate inspected returns/restock, pending its PR gates. Default-off loopback use, actual authentication, payment faults/webhooks, real business content, Safari/UAT and launch approval remain separate gates.
 
 ## Availability policy
 
@@ -136,7 +136,7 @@ The new protected routes are `/admin/commerce`, `/admin/commerce/orders`, `/admi
 
 Order views list all customers' owned test orders in this configured checkout instance, including new orders/preparations from the customer flow; legacy lab orders and other instances are excluded. Details use saved item names/SKUs/colours/sizes, quantities and CAD amounts, not today's product text/price. Only these minimal fields are selected; no raw snapshots, profile/contact data, owner/session hashes or internal payment keys are returned. GET filters and cursors are bounded; changing filters starts a new page. Inventory covers the shared fictional catalog in the isolated database, including unpublished/disabled variants, with separate physical/FB/checkout/allocated quantities; unpublished or disabled variants have zero website availability.
 
-The workspace summaries remain read-only. Separate default-off owner stock and fulfillment pages provide the controlled fictional operations described below; there is no refund or real shipment service. Stop/revert the new routes/navigation without changing any order/stock history. Existing legacy review/recovery is separate and unchanged.
+The workspace summaries remain read-only. Separate default-off owner stock and fulfillment pages provide the controlled fictional operations described below; separate full-refund pages are available under the explicit flags below; there is no real shipment service. Stop/revert the new routes/navigation without changing any order/stock history. Existing legacy review/recovery is separate and unchanged.
 
 For visual review without an Admin account:
 
@@ -173,3 +173,7 @@ Pause new operations by removing only `COMMERCE_OWNER_FULFILLMENT_WRITES`; retai
 Pause new requests via `COMMERCE_OWNER_REFUND_WRITES`; keep UI/query flags and original scope/database/config for recovery. Original local lookup does not need provider configuration; customer recorded-refund projection remains independent of all Admin refund flags. The separate `/owner-refund-preview?state=pending` Admin preview is presentation-only, not an actual refund or authenticated runtime acceptance.
 
 Issue95 extends `COMMERCE_LOCAL_REFUNDS=1` to the original PayPal capture with the same external private configuration opt-in and approved local Admin boundary. The order chooses its provider on the server; there is no new channel selector or account registration requirement. Keep original database/instance/request history for lookup/query, especially after a refund; do not use an older backup to rewind a provider-confirmed refund. See [owner refunds](./COMMERCE_OWNER_REFUNDS.md) for current acceptance limits.
+
+## Inspected test returns / Issue #97
+
+`COMMERCE_LOCAL_RETURNS=1 npm run commerce:local` enables the isolated, default-off Admin return UI and writes without provider credentials or an authentication bypass. Use **Return inspection and stock** only for a canonical original whole-order handoff. Inspection changes no inventory; sellable inspection plus a verified full refund permits a separate, once-only physical restock. Unhanded refunded orders remain ineligible and allocated, avoiding double-counted goods. See [original-request recovery, safe pauses and boundaries](./COMMERCE_OWNER_RETURNS.md). The paused `/owner-return-preview` scenes are presentation-only.
