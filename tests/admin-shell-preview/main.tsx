@@ -1,3 +1,4 @@
+import { OwnerAllocationReleasePreview } from "./owner-allocation-release";
 import { OwnerReturnPreview } from "./owner-return";
 import { OwnerRefundPreview } from "./owner-refund";
 import { OwnerFulfillmentPreview } from "./owner-fulfillment";
@@ -156,6 +157,10 @@ const router = createBrowserRouter([
   { path: "/stripe-checkout-preview", element: <StripeCheckoutPreview /> },
   ...commerceWorkspacePreviewRoutes,
   { path: "/owner-stock-preview", Component: OwnerStockPreview },
+  {
+    path: "/owner-allocation-release-preview",
+    element: <OwnerAllocationReleasePreview />,
+  },
   { path: "/owner-return-preview", element: <OwnerReturnPreview /> },
   { path: "/owner-refund-preview", Component: OwnerRefundPreview },
   { path: "/owner-fulfillment-preview", Component: OwnerFulfillmentPreview },

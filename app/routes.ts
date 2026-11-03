@@ -38,6 +38,14 @@ export default [
     "routes/admin-commerce-return-command.ts",
   ),
   route(
+    "admin/commerce/orders/:orderId/release-allocation",
+    "routes/admin-commerce-allocation-release.tsx",
+  ),
+  route(
+    "admin/commerce/orders/:orderId/release-allocation/commands",
+    "routes/admin-commerce-allocation-release-command.ts",
+  ),
+  route(
     "admin/commerce/orders/:orderId/return",
     "routes/admin-commerce-return.tsx",
   ),

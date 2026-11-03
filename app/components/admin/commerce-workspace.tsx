@@ -264,6 +264,14 @@ function OrderDetail({
             Refund status and test refund
           </Link>
         )}
+        {view.canReleaseAllocation && (
+          <Link
+            className="admin-primary-link"
+            to={`${base}/orders/${encodeURIComponent(order.reference)}/release-allocation`}
+          >
+            Release refunded order stock
+          </Link>
+        )}
         {view.canManageReturn && (
           <Link
             className="admin-primary-link"

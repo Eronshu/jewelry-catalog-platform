@@ -530,3 +530,23 @@ stock-only编译runner1505用新虚构state `jewelry-commerce-local-E4JAQx`启�
 最终delta：根4文件129项受影响测试通过（25.72秒），project/fixture TypeScript与生产build/Admin保护通过；范围fmt/lint和四证据文档格式通过，未重复无变化全套。独立contract_review实际复核`1674bf3e8d35ee58a1155cf8472c199a84cd0f78`并独立运行两项确定性D1同键race（7.23秒），P2关闭、限定审查无未解；core blob `078091bca2bc1695899afad993853d0c8e20b5df`、test `c3cf8ca7abd9ab6d526ac7c9f3bf6f5aed0cde5c`、migration `8ee68c7feefe9d798b01a45e51b55735b956e837`。之后仅证据文档，不把CI或作者总结冒充独立审查。
 
 退货-only compiledrunner8798（无provider配置）正常启动，新虚构state`jewelry-commerce-local-geg904`只读核对payment_scope local-test/1、return_commands0；未配置Admin入口GET503失败关闭，不记成401或真实授权浏览器成功。随后Ctrl-C正常停止session48582，state保留，未停止5193用户预览。runner的只含本次expiry capability私有文件按既有约定保留，不含服务商凭据；没有实际库存/退款操作。
+
+## 2026-11-03：Issue #99 未交付全额退款单库存占用释放（实施中）
+
+前置PR98已完整收口：head22d963fa CI134/run41572103320成功、独立实际审查无未解；main95c41aa259bc7c3a11416d46911d7b8801943739/treec83ed5ee18c52b1c80f8ce350530d57b679b7ba9与验收树相等，mainCI135/run41582151391成功，gate6595966932/post6595974777/final6596112826。完整两源及全部110核心生成文件再次验证后清理树/refs，归档manifest保存；远程删除不支持未执行。不重复之前功能。
+
+从干净greenmain单独建立codex/owner-refund-stock-release及独立核心工作树，读取规格/ADR/实际库存模型后推进既有Issue99。原return会加physical、release只减checkout，不能套用；在同canonicalmovement新增明确deallocate，仅释放原整单allocated，其他余额及原付款/退款/交付历史不动。全额退款已验证、原无handoff，经营者必须确认货品仍在店内可售，这是虚构测试假设非真实政策。核心迁移/服务端/测试与根UI/HTTP/route/runner文件互不重叠；一个独立审查者只读实际库存/权限风险，最多两个子代理同时，实际模型不可读取。
+
+根已保存default-off权限/纯JSONresource/暂停原回执lookup、最后operator/instance/writeflags复核、先sessionStorage持久原UUID/version/stockhash再POST、未知不换键的界面和对应目标测试，5组件测试先通过（323ms），范围fmt/lint通过。新增Worker→Router权限边界用例及核心迁移仍待整合/运行，不提前记通过。暂停虚构preview1280/390px scroll/client相等、main1/按钮44px，长SKU换行；已释放只显示allocated0/physical5，已交付无释放入口；临时tab37关闭、viewport复原，原5193用户预览保留。不是认证/D1/Safari/UAT。
+
+本片未加载凭据、未调用provider或改变两笔实际Sandbox原付款退款单/未知hold。新功能尚无PR/完整检查/最终独立审查，不冒称完成。核心0029重建前实际核到12个stockmovement触发器及一个显式索引，需保完整rowid/金融历史/FK与旧guard、复制时不重放apply；待实际迁移/失败回滚/四余额/floor/幂等测试验证。
+
+续作恢复：此前两个代理均遭实际usage limit中断，未完成检查/放行，4个核心文件与node_modules symlink已保存，根界面源`a59d44e9c0b7299fcae5b7aa31a9ddeaaeccafaa`干净。用户继续后只读usage primary0%/weekly48%/ordinaryallowedtrue，窗口自然恢复，free reset仍可用但未消费；不购买额度。恢复原作者及原审查者继续同一任务，顶部错导入在保存文件上修正，未重生代码。独立初审已在内存SQLite核旧12trigger/索引/FK保留及copy-before-apply，不冒充真实D1升级或最终审查；新增INSERT OR REPLACE/UPSERT低allocated拒绝由同floor测试补核，完整验收待实际完成。
+
+核心源`dbd5ee571844c8dd9bbb8d1780a1e0e630410d09`仅4文件已完成并整合为根`3b059a3087ed6c32087d97ea20cacac3c44ad40a`，node_modules临时symlink已删、生成文件保留。核心24真实D1/完整typecheck/lint/build/Admin保护通过；原数量2/迁移/两provider/原子回滚7项和REPLACE/UPSERT floor1项增量通过。原所有stockmovement12trigger及显式index保留，唯一apply逻辑增deallocate减allocated，genericStockKind仍拒绝deallocate。
+
+独立contract_review实际审查最终runtime`3b059a3`，修正导入及其余语义符合初审；0029blob`8c5efc846ba3788042f94d0bb8b31f6f7d48a43d`、server`0c1143b22e53401ecd94eeca317709797e7ffa82`、types`68b298a2c1be308e74863195d071546a03863dc6`、test`2cecc4ace9458320392a3afb90fd88344b9f521c`，HTTP`17288069f7188489cb710b3fd60bda4fcf42b186`/UI`397b5bff56179607f1dc26c08263af04d343b7a8`未变。审查者独立跑3真实D1（8.79秒，21未重复）核两provider数量2和其他订单REPLACE/UPSERT floor；限定审查无未解决发现。审查不替代根完整检查/准确headCI，不冒称Safari/UAT/实际provider验收。根完整pipeline运行中，结果完成后另记。
+
+最终整合检查：format/lint/generated Worker+route project/fixture TypeScript、103文件1823应用测试（173.49秒）、6离线HTTP模拟、生产build/Admin资产保护全部通过。此全套已含根5UI、7HTTP及新增4Worker→Router权限边界；没有重复无变化全套。首轮只在中断前的UI旧fixture留有handed_over/canRelease=true自相矛盾测试props，续作已改成未handoff/physical5/allocated1，运行逻辑未变并随全套通过。没有读真实配置或调用provider。最终仅证据docs增量，需复核后提交准确发布树，PR/CI未完成不提前记成功。
+
+allocation-release-only compiledrunner8799在新虚构state`jewelry-commerce-local-43Dyz5`启动，无provider配置；只读核scope1/local-test、release_commands0，Admin未配置GET503失败关闭，不计真实授权浏览器成功。runner65664随后Ctrl-C正常停止，state与本次expiry capability私有文件保留，无服务商secret；5193原用户表现预览未停止。新功能只在虚构D1/合成JWT及paused预览验证，没有更改两笔实际Sandbox退款单/未知付款hold。
