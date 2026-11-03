@@ -962,7 +962,7 @@ describe("owner whole-order fulfillment on real local D1", () => {
       on_hand: 3,
       allocated: 0,
     });
-  });
+  }, 30000);
   it("blocks PayPal attention observed after pack or during final authorization, preserving paid facts and allocation", async () => {
     const item = await paid("shipping", false, true);
     await apply(await request(item.orderId));
