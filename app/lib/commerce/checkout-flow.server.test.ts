@@ -817,6 +817,8 @@ describe("visible customer order flow on real temporary D1", () => {
     let now = Date.now(),
       captured = false;
     let session: Record<string, unknown> | undefined;
+    let refundTotal = 0;
+    let canonicalRefund: Record<string, unknown> | undefined;
     const transport = vi.fn(async (url: string, init: RequestInit) => {
       expect(url.startsWith("https://api.stripe.com/v1/")).toBe(true);
       if (url.endsWith("/account"))
@@ -887,9 +889,31 @@ describe("visible customer order flow on real temporary D1", () => {
           amount: 4400,
           amount_captured: 4400,
           refunded: false,
-          amount_refunded: 0,
+          amount_refunded: refundTotal,
           disputed: false,
         });
+      if (url.endsWith("/refunds") && init.method === "POST") {
+        const form = new URLSearchParams(String(init.body));
+        const metadata = Object.fromEntries(
+          [...form.entries()]
+            .filter(([key]) => key.startsWith("metadata["))
+            .map(([key, value]) => [key.slice(9, -1), value]),
+        );
+        expect(form.get("amount")).toBe("1500");
+        refundTotal = 1500;
+        canonicalRefund = {
+          id: "re_FictionalRoute123",
+          object: "refund",
+          charge: "ch_FictionalRoute123",
+          payment_intent: "pi_FictionalRoute123",
+          currency: "cad",
+          amount: 1500,
+          status: "succeeded",
+          metadata,
+        };
+        return Response.json(canonicalRefund);
+      }
+      if (url.includes("/refunds/re_")) return Response.json(canonicalRefund);
       throw new Error("Unexpected injected test request");
     });
     const path = `/checkout/orders/${created.orderId}/stripe`;
@@ -1040,7 +1064,55 @@ describe("visible customer order flow on real temporary D1", () => {
         .bind(created.orderId)
         .first(),
     ).toEqual({ n: 1 });
-    // A refund remains visible to its customer even with every Admin refund flag off.
+    // A verified partial is visible only to its owner, without Admin opt-ins or internal history.
+    const partialRequestId = crypto.randomUUID();
+    expect(
+      (
+        await startOwnerStripeRefund(
+          db,
+          { mode: "local-test", instanceId: instance },
+          { email: "owner@example.invalid", sub: "fictional-owner" },
+          {
+            requestId: partialRequestId,
+            orderId: created.orderId,
+            expectedVersion: 3,
+            acknowledge: true,
+            refundCents: 1500,
+            expectedRefundedCents: 0,
+          },
+          {
+            enabled: true,
+            mode: "local-test",
+            instanceId: instance,
+            canonicalOrigin: origin,
+            expectedAccountId: accountId,
+            testSecretKey: ["sk", "test", "0".repeat(24)].join("_"),
+          },
+          transport,
+          () => now + 1,
+        )
+      ).state,
+    ).toBe("succeeded");
+    const partialStatus = await loadCheckoutOrder(
+      get(`/checkout/orders/${created.orderId}`, client.cookie),
+      settings(),
+      created.orderId,
+    );
+    const partialBody = (await partialStatus.json()) as {
+      refund: Record<string, unknown>;
+    };
+    expect(partialBody.refund).toEqual({
+      state: "partially_refunded",
+      amountCents: 4400,
+      refundedCents: 1500,
+    });
+    expect(JSON.stringify(partialBody)).not.toContain(partialRequestId);
+    expect(Object.keys(partialBody.refund).sort()).toEqual([
+      "amountCents",
+      "refundedCents",
+      "state",
+    ]);
+    // A later uncertain request does not hide or inflate the already confirmed partial.
     const refundRequestId = crypto.randomUUID();
     const refundReceipt = await startOwnerStripeRefund(
       db,
@@ -1051,6 +1123,8 @@ describe("visible customer order flow on real temporary D1", () => {
         orderId: created.orderId,
         expectedVersion: 3,
         acknowledge: true,
+        refundCents: 2900,
+        expectedRefundedCents: 1500,
       },
       {
         enabled: true,
@@ -1078,7 +1152,7 @@ describe("visible customer order flow on real temporary D1", () => {
     expect(refundBody.refund).toEqual({
       state: "review_required",
       amountCents: 4400,
-      refundedCents: 0,
+      refundedCents: 1500,
     });
     expect(JSON.stringify(refundBody)).not.toContain(refundRequestId);
     expect(JSON.stringify(refundBody)).not.toMatch(

@@ -16,6 +16,7 @@ const labels: Record<OwnerRefundState, string> = {
   prepared: "Refund request saved — result not verified",
   pending: "Refund pending with payment provider",
   succeeded: "Full test refund verified",
+  partially_refunded: "Partial test refund verified",
   review_required: "Refund needs review — do not issue another",
 };
 function providerName(provider: OwnerRefundPage["detail"]["provider"]) {
@@ -33,31 +34,64 @@ function statusLabel(
     ? `Refund pending with ${providerName(provider)}`
     : labels[state];
 }
+function cents(value: string) {
+  if (!/^(0|[1-9][0-9]{0,12})(\.[0-9]{1,2})?$/.test(value)) return null;
+  const [whole, fraction = ""] = value.split(".");
+  const amount = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
+}
 function original(key: string, detail: OwnerRefundPage["detail"]) {
   try {
     const raw = sessionStorage.getItem(key);
     const value = raw
       ? (JSON.parse(raw) as OwnerRefundInput)
-      : detail.requestId && detail.requestVersion
+      : detail.requestId &&
+          detail.requestVersion &&
+          !detail.canStart &&
+          !detail.canStartPartial &&
+          detail.state !== "succeeded" &&
+          detail.state !== "partially_refunded"
         ? {
             requestId: detail.requestId,
             orderId: detail.orderId,
             expectedVersion: detail.requestVersion,
             acknowledge: true,
+            ...(detail.currentRequestRefundCents != null &&
+            detail.currentRequestPriorRefundedCents != null
+              ? {
+                  refundCents: detail.currentRequestRefundCents,
+                  expectedRefundedCents:
+                    detail.currentRequestPriorRefundedCents,
+                }
+              : {}),
           }
         : null;
+    const partial =
+      value && ("refundCents" in value || "expectedRefundedCents" in value);
+    const keys = [
+      "requestId",
+      "orderId",
+      "expectedVersion",
+      "acknowledge",
+      ...(partial ? ["refundCents", "expectedRefundedCents"] : []),
+    ];
     if (
       value &&
-      (Object.keys(value).sort().join() !==
-        ["requestId", "orderId", "expectedVersion", "acknowledge"]
-          .sort()
-          .join() ||
+      (Object.keys(value).sort().join() !== keys.sort().join() ||
         value.orderId !== detail.orderId ||
         !uuid.test(value.requestId) ||
         value.acknowledge !== true ||
         !Number.isSafeInteger(value.expectedVersion) ||
         value.expectedVersion < 1 ||
-        (detail.requestId && detail.requestId !== value.requestId))
+        (detail.requestId !== null && detail.requestId !== value.requestId) ||
+        (partial &&
+          (detail.provider !== "stripe" ||
+            !Number.isSafeInteger(value.refundCents) ||
+            value.refundCents! <= 0 ||
+            !Number.isSafeInteger(value.expectedRefundedCents) ||
+            value.expectedRefundedCents! < 0 ||
+            value.refundCents! + value.expectedRefundedCents! >
+              detail.amountCents)))
     )
       throw Error();
     return { input: value as OwnerRefundInput | null, error: "" };
@@ -65,7 +99,7 @@ function original(key: string, detail: OwnerRefundPage["detail"]) {
     return {
       input: null,
       error:
-        "Saved refund request or browser storage is unavailable. Ask the developer to recover the original request before another action.",
+        "Saved refund request conflicts with the current record, or browser storage is unavailable. Keep the saved request and ask the developer to recover it before another action.",
     };
   }
 }
@@ -118,6 +152,9 @@ function Controls({
     [blocked, setBlocked] = useState(!!initial.error),
     [busy, setBusy] = useState(false),
     [ack, setAck] = useState(false),
+    [amount, setAmount] = useState(
+      ((detail.remainingCents ?? detail.amountCents) / 100).toFixed(2),
+    ),
     [receipt, setReceipt] = useState<OwnerRefundReceipt | null>(null),
     [message, setMessage] = useState(initial.error);
   const active = useRef(false),
@@ -135,6 +172,23 @@ function Controls({
     if (message) status.current?.focus();
   }, [message]);
   const current = receipt ?? detail;
+  const partial =
+    detail.provider === "stripe" && detail.canStartPartial === true;
+  const requested = cents(amount);
+  const remaining =
+    detail.remainingCents ??
+    Math.max(0, detail.amountCents - detail.refundedCents);
+  const validAmount = requested !== null && requested <= remaining;
+  const verifiedTotal =
+    receipt?.state === "succeeded"
+      ? receipt.expectedRefundedCents !== undefined
+        ? receipt.expectedRefundedCents + receipt.refundedCents
+        : receipt.refundedCents
+      : detail.refundedCents;
+  const currentLabel =
+    receipt?.refundCents !== undefined && receipt.state === "succeeded"
+      ? "Test refund verified — reload the remaining balance"
+      : statusLabel(current.state, detail.provider);
   async function perform(
     input: OwnerRefundInput,
     intent: "start" | "query" | "lookup",
@@ -165,6 +219,12 @@ function Controls({
             requestId: input.requestId,
             expectedVersion: String(input.expectedVersion),
             acknowledge: "true",
+            ...(input.refundCents !== undefined
+              ? {
+                  refundCents: String(input.refundCents),
+                  expectedRefundedCents: String(input.expectedRefundedCents),
+                }
+              : {}),
           }),
         },
       );
@@ -189,16 +249,27 @@ function Controls({
         r.orderId !== input.orderId ||
         !Object.hasOwn(labels, r.state) ||
         r.state === "not_started" ||
+        r.state === "partially_refunded" ||
         r.amountCents !== detail.amountCents ||
         !Number.isSafeInteger(r.refundedCents) ||
         r.refundedCents < 0 ||
         r.refundedCents > r.amountCents ||
-        (r.state === "succeeded" && r.refundedCents !== r.amountCents)
+        (input.refundCents !== undefined
+          ? r.refundCents !== input.refundCents ||
+            r.expectedRefundedCents !== input.expectedRefundedCents ||
+            (r.state === "succeeded" &&
+              r.refundedCents !== input.refundCents) ||
+            (r.state !== "succeeded" && r.refundedCents !== 0)
+          : r.refundCents !== undefined ||
+            r.expectedRefundedCents !== undefined ||
+            (r.state === "succeeded" && r.refundedCents !== r.amountCents))
       )
         throw Error();
       setReceipt(r);
       setMessage(
-        statusLabel(r.state, detail.provider) +
+        (r.refundCents !== undefined && r.state === "succeeded"
+          ? "Test refund verified — reload the remaining balance"
+          : statusLabel(r.state, detail.provider)) +
           ". Stock has not been returned or released.",
       );
       if (r.state === "succeeded") {
@@ -231,7 +302,8 @@ function Controls({
       pending ||
       receipt ||
       !canWrite ||
-      !detail.canStart ||
+      !(detail.canStart || partial) ||
+      (partial && !validAmount) ||
       !ack
     )
       return;
@@ -240,6 +312,12 @@ function Controls({
       orderId: detail.orderId,
       expectedVersion: detail.orderVersion,
       acknowledge: true,
+      ...(partial
+        ? {
+            refundCents: requested!,
+            expectedRefundedCents: detail.refundedCents,
+          }
+        : {}),
     };
     try {
       sessionStorage.setItem(key, JSON.stringify(input));
@@ -259,7 +337,7 @@ function Controls({
       <dl className="commerce-workspace-facts">
         <div>
           <dt>Refund status</dt>
-          <dd>{statusLabel(current.state, detail.provider)}</dd>
+          <dd>{currentLabel}</dd>
         </div>
         <div>
           <dt>Original captured amount</dt>
@@ -267,14 +345,44 @@ function Controls({
         </div>
         <div>
           <dt>Verified refunded amount</dt>
-          <dd>{formatCad(current.refundedCents)} CAD</dd>
+          <dd>{formatCad(verifiedTotal)} CAD</dd>
+        </div>
+        <div>
+          <dt>Remaining refundable amount</dt>
+          <dd>
+            {formatCad(Math.max(0, detail.amountCents - verifiedTotal))} CAD
+          </dd>
         </div>
       </dl>
       <p>
-        This test action refunds the entire original{" "}
-        {providerName(detail.provider)} capture, including the saved test
-        delivery and tax amount. Partial refunds are separate upcoming work.
+        {detail.provider === "stripe" &&
+        detail.canStartPartial !== undefined ? (
+          "Enter a fictional Stripe refund amount up to the verified remaining balance. Each result must be verified before another refund."
+        ) : (
+          <>
+            This test action refunds the entire original{" "}
+            {providerName(detail.provider)} capture, including the saved test
+            delivery and tax amount.
+          </>
+        )}
       </p>
+      {!!detail.history?.length && (
+        <section aria-label="Recorded test refunds">
+          <h2>Refund history</h2>
+          <ol>
+            {detail.history.map((item) => (
+              <li key={item.requestId}>
+                {formatCad(item.refundCents ?? item.amountCents)} CAD requested
+                ·{" "}
+                {item.state === "succeeded"
+                  ? "Verified"
+                  : statusLabel(item.state, detail.provider)}{" "}
+                · {formatCad(item.refundedCents)} CAD verified for this request
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       <p>
         A recorded request stops further packing and handoff. Refunding money
         never automatically adds stock back or releases allocated stock;
@@ -292,29 +400,56 @@ function Controls({
           viewed.
         </p>
       )}
-      {detail.canStart && !pending && !receipt && (
+      {(detail.canStart || partial) && !pending && !receipt && (
         <fieldset disabled={busy || blocked || !canWrite}>
-          <legend>Confirm full fictional refund</legend>
+          <legend>
+            {partial
+              ? "Confirm fictional refund amount"
+              : "Confirm full fictional refund"}
+          </legend>
+          {partial && (
+            <label>
+              Refund amount (CAD)
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                aria-invalid={!validAmount}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setAck(false);
+                }}
+              />
+              {!validAmount && (
+                <span>
+                  Enter an amount from 0.01 to {(remaining / 100).toFixed(2)}{" "}
+                  CAD, with at most two decimal places.
+                </span>
+              )}
+            </label>
+          )}
           <label className="owner-stock-confirm">
             <input
               type="checkbox"
               checked={ack}
               onChange={(e) => setAck(e.target.checked)}
             />
-            I reviewed this fictional order and authorize its full{" "}
-            {formatCad(detail.amountCents)} CAD test refund.
+            I reviewed this fictional order and authorize{" "}
+            {partial ? "this" : "its full"}{" "}
+            {formatCad(partial ? (requested ?? 0) : detail.amountCents)} CAD
+            test refund.
           </label>
           <button
             type="button"
             className="admin-primary-button"
-            disabled={!ack}
+            disabled={!ack || (partial && !validAmount)}
             onClick={start}
           >
-            Refund full test amount
+            {partial ? "Refund test amount" : "Refund full test amount"}
           </button>
         </fieldset>
       )}
-      {pending && current.state !== "succeeded" && (
+      {pending && receipt?.state !== "succeeded" && (
         <section aria-label="Original refund request">
           <h2>Keep this original request</h2>
           <p className="commerce-workspace-reference">{pending.requestId}</p>

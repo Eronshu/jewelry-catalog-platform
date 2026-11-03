@@ -112,9 +112,18 @@ export async function actOwnerRefundPage(
       throw new OwnerRefundError("invalid_request");
     const form = await readCommerceForm(request);
     const keys = ["intent", "requestId", "expectedVersion", "acknowledge"];
+    const amountKeys = ["refundCents", "expectedRefundedCents"];
+    const hasAmount = amountKeys.some((k) => form.has(k));
     if (
       keys.some((k) => !form.has(k)) ||
-      [...form.keys()].some((k) => !keys.includes(k)) ||
+      [...form.keys()].some((k) => ![...keys, ...amountKeys].includes(k)) ||
+      (hasAmount &&
+        (amountKeys.some((k) => !form.has(k)) ||
+          !/^[1-9][0-9]{0,15}$/.test(form.get("refundCents")!) ||
+          !/^(0|[1-9][0-9]{0,15})$/.test(form.get("expectedRefundedCents")!) ||
+          amountKeys.some(
+            (k) => !Number.isSafeInteger(Number(form.get(k))),
+          ))) ||
       !["start", "query", "lookup"].includes(form.get("intent")!) ||
       form.get("acknowledge") !== "true" ||
       !/^[1-9][0-9]{0,15}$/.test(form.get("expectedVersion")!) ||
@@ -126,6 +135,12 @@ export async function actOwnerRefundPage(
       orderId,
       expectedVersion: Number(form.get("expectedVersion")),
       acknowledge: true,
+      ...(hasAmount
+        ? {
+            refundCents: Number(form.get("refundCents")),
+            expectedRefundedCents: Number(form.get("expectedRefundedCents")),
+          }
+        : {}),
     };
     if (form.get("intent") === "lookup")
       return json(
@@ -196,6 +211,7 @@ export async function actOwnerRefundPage(
         authorize,
       );
     } else if (detail.provider === "paypal") {
+      if (hasAmount) throw new OwnerRefundError("invalid_request");
       const config = paypalRuntimeConfig(request, initial.env);
       if (!config) throw new Response(null, { status: 503 });
       const authorize = async () => {

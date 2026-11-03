@@ -84,11 +84,17 @@ function principal(raw: unknown): AdminPrincipal {
   return { email: email.toLowerCase(), sub };
 }
 function input(raw: unknown): OwnerRefundInput {
+  const hasAmounts =
+    !!raw &&
+    typeof raw === "object" &&
+    (Object.hasOwn(raw, "refundCents") ||
+      Object.hasOwn(raw, "expectedRefundedCents"));
   const i = fields(raw, [
     "requestId",
     "orderId",
     "expectedVersion",
     "acknowledge",
+    ...(hasAmounts ? ["refundCents", "expectedRefundedCents"] : []),
   ]);
   if (i.acknowledge !== true) fail("invalid_request");
   return {
@@ -96,6 +102,12 @@ function input(raw: unknown): OwnerRefundInput {
     orderId: text(i.orderId, orderIdPattern),
     expectedVersion: integer(i.expectedVersion, 1, Number.MAX_SAFE_INTEGER - 1),
     acknowledge: true,
+    ...(hasAmounts
+      ? {
+          refundCents: integer(i.refundCents, 1, 99999999),
+          expectedRefundedCents: integer(i.expectedRefundedCents, 0, 99999999),
+        }
+      : {}),
   };
 }
 async function safe<T>(run: () => Promise<T>): Promise<T> {
@@ -137,6 +149,9 @@ type Saved = {
   payment_request_id: string;
   create_operation_key: string;
   amount_cents: number;
+  refund_cents: number;
+  prior_refunded_cents: number;
+  input_contract: "legacy-full-v1" | "partial-v2";
   recorded_at: number;
   dispatch_id: string | null;
   dispatch_at: number | null;
@@ -149,7 +164,7 @@ const savedQuery = `SELECT r.*,d.dispatch_id,d.recorded_at AS dispatch_at,
  (SELECT refund_id FROM commerce_owner_refund_observations v WHERE v.request_id=r.request_id ORDER BY rowid DESC LIMIT 1) AS refund_id,
  (SELECT status FROM commerce_owner_refund_observations v WHERE v.request_id=r.request_id ORDER BY rowid DESC LIMIT 1) AS status,
  (SELECT refunded_cents FROM commerce_owner_refund_observations v WHERE v.request_id=r.request_id ORDER BY rowid DESC LIMIT 1) AS refunded_cents,
- EXISTS(SELECT 1 FROM commerce_owner_refund_observations v WHERE v.request_id=r.request_id AND v.status='succeeded' AND v.refunded_cents=r.amount_cents) AS succeeded
+ EXISTS(SELECT 1 FROM commerce_owner_refund_observations v WHERE v.request_id=r.request_id AND v.status='succeeded' AND v.amount_cents=r.amount_cents AND v.refunded_cents=r.refund_cents) AS succeeded
  FROM commerce_owner_refund_intents r LEFT JOIN commerce_owner_refund_dispatches d ON d.request_id=r.request_id`;
 function state(r: Saved): OwnerRefundState {
   return r.succeeded === 1
@@ -167,7 +182,13 @@ function receipt(r: Saved): OwnerRefundReceipt {
     orderId: r.order_id,
     state: state(r),
     amountCents: r.amount_cents,
-    refundedCents: r.succeeded === 1 ? r.amount_cents : (r.refunded_cents ?? 0),
+    refundedCents: r.succeeded === 1 ? r.refund_cents : 0,
+    ...(r.input_contract === "partial-v2"
+      ? {
+          refundCents: r.refund_cents,
+          expectedRefundedCents: r.prior_refunded_cents,
+        }
+      : {}),
   };
 }
 async function detail(
@@ -191,23 +212,54 @@ async function detail(
       eligible: number;
     }>();
   if (!o) return null;
-  const r = await db
-    .prepare(
-      savedQuery + " WHERE r.order_id=? AND r.mode=? AND r.instance_id=?",
-    )
-    .bind(orderId, s.mode, s.instanceId)
-    .first<Saved>();
+  const history = (
+    await db
+      .prepare(
+        savedQuery +
+          " WHERE r.order_id=? AND r.mode=? AND r.instance_id=? ORDER BY r.rowid",
+      )
+      .bind(orderId, s.mode, s.instanceId)
+      .all<Saved>()
+  ).results;
+  const unresolved = history.find((r) => r.succeeded !== 1);
+  const current = unresolved ?? history.at(-1);
+  const refundedCents = history.reduce(
+    (sum, r) => sum + (r.succeeded === 1 ? r.refund_cents : 0),
+    0,
+  );
+  const remainingCents = o.amount - refundedCents;
+  const canStartPartial =
+    o.provider === "stripe" &&
+    !unresolved &&
+    remainingCents > 0 &&
+    o.eligible === 1;
   return {
     orderId,
     orderVersion: o.version,
     amountCents: o.amount,
     provider: o.provider,
-    requestId: r?.request_id ?? null,
-    requestVersion: r?.expected_version ?? null,
-    state: r ? state(r) : "not_started",
-    refundedCents: r ? receipt(r).refundedCents : 0,
-    canStart: !r && o.eligible === 1,
-    canQuery: !!r?.dispatch_id && r.succeeded !== 1,
+    requestId: current?.request_id ?? null,
+    requestVersion: current?.expected_version ?? null,
+    state: unresolved
+      ? state(unresolved)
+      : refundedCents > 0 && remainingCents > 0
+        ? "partially_refunded"
+        : current
+          ? "succeeded"
+          : "not_started",
+    refundedCents,
+    remainingCents,
+    fullyRefunded: remainingCents === 0,
+    history: history.map(receipt),
+    canStart: history.length === 0 && o.eligible === 1,
+    canStartPartial,
+    canQuery: !!unresolved?.dispatch_id,
+    currentRequestRefundCents:
+      current?.input_contract === "partial-v2" ? current.refund_cents : null,
+    currentRequestPriorRefundedCents:
+      current?.input_contract === "partial-v2"
+        ? current.prior_refunded_cents
+        : null,
   };
 }
 export async function readOwnerRefund(
@@ -242,7 +294,12 @@ async function identity(
     s,
     i,
     actorHash,
-    requestHash: await commandHash(["owner-refund-v1", s, actorHash, i]),
+    requestHash: await commandHash([
+      i.refundCents === undefined ? "owner-refund-v1" : "owner-refund-v2",
+      s,
+      actorHash,
+      i,
+    ]),
   };
 }
 async function find(db: D1Database, id: Identity): Promise<Saved | null> {
@@ -261,7 +318,11 @@ async function find(db: D1Database, id: Identity): Promise<Saved | null> {
   if (
     r.order_id !== id.i.orderId ||
     r.expected_version !== id.i.expectedVersion ||
-    r.operation_key !== r.request_id
+    r.operation_key !== r.request_id ||
+    r.input_contract !==
+      (id.i.refundCents === undefined ? "legacy-full-v1" : "partial-v2") ||
+    r.refund_cents !== (id.i.refundCents ?? r.amount_cents) ||
+    r.prior_refunded_cents !== (id.i.expectedRefundedCents ?? 0)
   )
     fail("unavailable");
   return r;
@@ -346,6 +407,12 @@ function association(r: Saved): StripeSandboxRefundAssociation {
     chargeId: r.transaction_ref,
     paymentIntentId: r.payment_intent_ref!,
     amountCents: r.amount_cents,
+    ...(r.input_contract === "partial-v2"
+      ? {
+          refundCents: r.refund_cents,
+          expectedRefundedCents: r.prior_refunded_cents,
+        }
+      : {}),
   };
 }
 type RefundAdapter = {
@@ -515,6 +582,8 @@ async function startRefund(
   const s = scope(rawScope),
     a = principal(rawActor),
     i = input(rawInput);
+  if (c.provider === "paypal" && i.refundCents !== undefined)
+    fail("invalid_request");
   const id = await safe(() => identity(s, a, i));
   const replay = await safe(async () => {
     await checkedScope(db, s);
@@ -558,10 +627,18 @@ async function startRefund(
       source.canonical_origin !== c.canonicalOrigin
     )
       fail("conflict");
+    const prior = (await detail(db, s, i.orderId))!;
+    if (
+      (i.expectedRefundedCents ?? 0) !== prior.refundedCents ||
+      (i.refundCents ?? source.amount_cents) >
+        source.amount_cents - prior.refundedCents ||
+      prior.history?.some((r) => r.state !== "succeeded")
+    )
+      fail("conflict");
     try {
       const written = await db
         .prepare(
-          `INSERT INTO commerce_owner_refund_intents(request_id,mode,instance_id,actor_hash,request_hash,order_id,capture_id,expected_version,operation_key,provider,account_ref,canonical_origin,transaction_ref,payment_intent_ref,provider_object_ref,payment_request_id,create_operation_key,amount_cents,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO commerce_owner_refund_intents(request_id,mode,instance_id,actor_hash,request_hash,order_id,capture_id,expected_version,operation_key,provider,account_ref,canonical_origin,transaction_ref,payment_intent_ref,provider_object_ref,payment_request_id,create_operation_key,amount_cents,recorded_at,refund_cents,prior_refunded_cents,input_contract) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .bind(
           i.requestId,
@@ -583,6 +660,9 @@ async function startRefund(
           source.create_operation_key,
           source.amount_cents,
           now,
+          i.refundCents ?? source.amount_cents,
+          i.expectedRefundedCents ?? 0,
+          i.refundCents === undefined ? "legacy-full-v1" : "partial-v2",
         )
         .run();
       intentAcknowledged =
@@ -606,7 +686,7 @@ async function startRefund(
     db
       .prepare(
         `SELECT 1 AS ok FROM commerce_owner_refund_dispatches d JOIN commerce_owner_refund_intents r ON r.request_id=d.request_id JOIN commerce_owner_refund_sources s ON s.capture_id=r.capture_id
- WHERE d.request_id=? AND d.dispatch_id=? AND d.recorded_at=? AND r.request_hash=? AND r.actor_hash=? AND r.mode=? AND r.instance_id=? AND r.order_id=? AND r.expected_version=? AND r.operation_key=? AND r.provider=? AND r.account_ref=? AND r.canonical_origin=? AND r.transaction_ref=? AND r.payment_intent_ref IS ? AND r.provider_object_ref=? AND r.payment_request_id=? AND r.create_operation_key=? AND r.amount_cents=? AND r.capture_id=? AND r.recorded_at=? AND s.provider=r.provider AND s.version=r.expected_version AND s.order_id=r.order_id AND s.mode=r.mode AND s.instance_id=r.instance_id AND s.account_ref=r.account_ref AND s.canonical_origin=r.canonical_origin AND s.transaction_ref=r.transaction_ref AND s.payment_intent_ref IS r.payment_intent_ref AND s.provider_object_ref=r.provider_object_ref AND s.payment_request_id=r.payment_request_id AND s.create_operation_key=r.create_operation_key AND s.amount_cents=r.amount_cents`,
+ WHERE d.request_id=? AND d.dispatch_id=? AND d.recorded_at=? AND r.request_hash=? AND r.actor_hash=? AND r.mode=? AND r.instance_id=? AND r.order_id=? AND r.expected_version=? AND r.operation_key=? AND r.provider=? AND r.account_ref=? AND r.canonical_origin=? AND r.transaction_ref=? AND r.payment_intent_ref IS ? AND r.provider_object_ref=? AND r.payment_request_id=? AND r.create_operation_key=? AND r.amount_cents=? AND r.capture_id=? AND r.recorded_at=? AND r.refund_cents=? AND r.prior_refunded_cents=? AND r.input_contract=? AND s.provider=r.provider AND s.version=r.expected_version AND s.order_id=r.order_id AND s.mode=r.mode AND s.instance_id=r.instance_id AND s.account_ref=r.account_ref AND s.canonical_origin=r.canonical_origin AND s.transaction_ref=r.transaction_ref AND s.payment_intent_ref IS r.payment_intent_ref AND s.provider_object_ref=r.provider_object_ref AND s.payment_request_id=r.payment_request_id AND s.create_operation_key=r.create_operation_key AND s.amount_cents=r.amount_cents`,
       )
       .bind(
         i.requestId,
@@ -630,6 +710,9 @@ async function startRefund(
         r!.amount_cents,
         r!.capture_id,
         r!.recorded_at,
+        r!.refund_cents,
+        r!.prior_refunded_cents,
+        r!.input_contract,
       )
       .first();
   let acknowledged = false;

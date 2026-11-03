@@ -1,6 +1,6 @@
 # 从当前本地商城基础到正式开售：剩余工作路线图
 
-核对日期：2026-11-03。基线main `95c41aa`（#98准确head CI134、独立实际审查及main CI135通过）。两家各一条真实Sandbox收款与全额退款、库存经营、后台打包/整单交付及已交付订单退货验收/独立回库已完成相应验收子集。当前 [Issue #99](https://github.com/Eronshu/jewelry-catalog-platform/issues/99) 开发未交付全额退款单的安全库存占用释放：只减allocated，不加physical，不改原付款/退款/交付事实；本地实现/必要检查和独立审查通过，待准确head PR/CI收口。随后部分退款、通知、对账/恢复和上线收口继续分项。付款或退款成功不等于完整营业验收。
+核对日期：2026-11-03。基线main `512bdf5`（库存释放#100及独立单测试预算修复#102已合并，mainCI139成功）。两家各一条真实Sandbox收款与全额退款、库存经营、后台打包/整单交付、已交付订单退货验收/独立回库及未交付全额退款单allocated释放，已完成各自验收子集。当前 [Issue #103](https://github.com/Eronshu/jewelry-catalog-platform/issues/103) 接入Stripe部分退款、累计已确认金额和剩余额度，沿用现有退款账本及原请求恢复；PayPal保持原全额流程。部分退款本地实现、必要检查和独立实际审查已通过，尚待准确head PR/CI收口与实际部分退款Sandbox验收。随后通知、对账/恢复和上线收口继续分项。付款或退款成功不等于完整营业验收。
 
 本路线图是**当前剩余工作的执行顺序入口**；[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 的 C01–C20 保留完整范围，[准备度审查](./COMMERCE_READINESS_REVIEW.md) 的 T01–T22 保留验收定义，[需求](./ONLINE_SALES_REQUIREMENTS.md) 保留经营决定。下文 Lxx 是待拆分的工作编号，不冒充已创建的 GitHub Issue 或完成状态。
 

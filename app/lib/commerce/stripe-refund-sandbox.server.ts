@@ -237,7 +237,11 @@ export type StripeSandboxRefundAssociation = {
   captureId: string;
   chargeId: string;
   paymentIntentId: string;
+  /** Original captured total. Omit both optional fields for saved full refunds. */
   amountCents: number;
+  /** Paired fields: this request's cents and the previously confirmed total. */
+  refundCents?: number;
+  expectedRefundedCents?: number;
 };
 export type StripeSandboxRefund = {
   refundId: string;
@@ -257,11 +261,42 @@ const refundKeys = [
   "amountCents",
 ];
 function refundAssociation(raw: unknown): StripeSandboxRefundAssociation {
-  const a = fields(raw, refundKeys, "invalid_request");
+  const partial =
+    raw !== null &&
+    typeof raw === "object" &&
+    (Object.hasOwn(raw, "refundCents") ||
+      Object.hasOwn(raw, "expectedRefundedCents"));
+  const a = fields(
+    raw,
+    partial
+      ? [...refundKeys, "refundCents", "expectedRefundedCents"]
+      : refundKeys,
+    "invalid_request",
+  );
   const orderId = match(a.orderId, /^order-[a-f0-9-]{36}$/, "invalid_request");
   match(orderId.slice(6), uuid, "invalid_request");
   const requestId = match(a.requestId, uuid, "invalid_request");
   if (a.operationKey !== requestId) fail("invalid_request");
+  const amountCents = integer(a.amountCents, 1, 99999999, "invalid_request");
+  let amounts: Pick<
+    StripeSandboxRefundAssociation,
+    "refundCents" | "expectedRefundedCents"
+  > = {};
+  if (partial) {
+    const refundCents = integer(
+      a.refundCents,
+      1,
+      amountCents,
+      "invalid_request",
+    );
+    const expectedRefundedCents = integer(
+      a.expectedRefundedCents,
+      0,
+      amountCents - refundCents,
+      "invalid_request",
+    );
+    amounts = { refundCents, expectedRefundedCents };
+  }
   return {
     orderId,
     requestId,
@@ -275,10 +310,11 @@ function refundAssociation(raw: unknown): StripeSandboxRefundAssociation {
       /^pi_[A-Za-z0-9]{8,240}$/,
       "invalid_request",
     ),
-    amountCents: integer(a.amountCents, 1, 99999999, "invalid_request"),
+    amountCents,
+    ...amounts,
   };
 }
-function refundMetadata(
+function paymentMetadata(
   c: StripeSandboxConfig,
   a: StripeSandboxRefundAssociation,
 ) {
@@ -289,9 +325,24 @@ function refundMetadata(
     order_id: a.orderId,
     attempt_id: a.paymentRequestId,
     create_operation_key: a.createOperationKey,
+  };
+}
+function refundMetadata(
+  c: StripeSandboxConfig,
+  a: StripeSandboxRefundAssociation,
+): Record<string, string> {
+  return {
+    ...paymentMetadata(c, a),
     refund_request_id: a.requestId,
     refund_operation_key: a.operationKey,
     capture_id: a.captureId,
+    ...(a.refundCents === undefined
+      ? {}
+      : {
+          refund_version: "2",
+          refund_amount_cents: String(a.refundCents),
+          refund_expected_refunded_cents: String(a.expectedRefundedCents),
+        }),
   };
 }
 function verifyMetadata(value: unknown, expected: Record<string, string>) {
@@ -321,17 +372,7 @@ async function charge(
     pi.latest_charge !== a.chargeId
   )
     fail("invalid_response");
-  const original = refundMetadata(c, a);
-  const {
-    refund_request_id: _request,
-    refund_operation_key: _key,
-    capture_id: _capture,
-    ...paymentMetadata
-  } = original;
-  void _request;
-  void _key;
-  void _capture;
-  verifyMetadata(pi.metadata, paymentMetadata);
+  verifyMetadata(pi.metadata, paymentMetadata(c, a));
   const ch = object(
     await request(c, fetcher, `/v1/charges/${a.chargeId}`),
     "invalid_response",
@@ -358,7 +399,7 @@ async function charge(
   );
   if (
     ch.refunded !== (refunded === a.amountCents) ||
-    (before && refunded !== 0)
+    (before && refunded !== (a.expectedRefundedCents ?? 0))
   )
     fail("invalid_response");
   return refunded;
@@ -379,20 +420,29 @@ function refund(
     r.charge !== a.chargeId ||
     r.payment_intent !== a.paymentIntentId ||
     r.currency !== "cad" ||
-    r.amount !== a.amountCents ||
+    r.amount !== (a.refundCents ?? a.amountCents) ||
     !["pending", "requires_action", "succeeded", "failed", "canceled"].includes(
       r.status as string,
     )
   )
     fail("invalid_response");
   verifyMetadata(r.metadata, refundMetadata(c, a));
-  if (r.status === "succeeded" && refundedCents !== a.amountCents)
+  if (
+    r.status === "succeeded" &&
+    refundedCents !==
+      (a.expectedRefundedCents ?? 0) + (a.refundCents ?? a.amountCents)
+  )
     fail("invalid_response");
   return {
     refundId: id,
     status: r.status as StripeSandboxRefund["status"],
     amountCents: a.amountCents,
-    refundedCents,
+    refundedCents:
+      a.refundCents === undefined
+        ? refundedCents
+        : r.status === "succeeded"
+          ? a.refundCents
+          : 0,
   };
 }
 /** Exactly one POST, authorized by the caller's durable dispatch acknowledgment.
@@ -413,7 +463,7 @@ export async function createStripeSandboxRefund(
     await beforeMutation();
     const body = new URLSearchParams({
       charge: a.chargeId,
-      amount: String(a.amountCents),
+      amount: String(a.refundCents ?? a.amountCents),
     });
     for (const [k, v] of Object.entries(refundMetadata(c, a)))
       body.set(`metadata[${k}]`, v);
