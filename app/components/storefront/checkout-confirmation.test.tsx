@@ -300,22 +300,37 @@ describe("final fictional order confirmation and private status UI", () => {
   });
 });
 
-it.each(["pending", "succeeded", "review_required"] as const)(
+it.each([
+  "pending",
+  "succeeded",
+  "partially_refunded",
+  "review_required",
+] as const)(
   "shows private %s refund separately and hides stale payment-start controls",
   async (state) => {
     await mount(true, false, true, true, {
       state,
       amountCents: 4400,
-      refundedCents: state === "succeeded" ? 4400 : 0,
+      refundedCents:
+        state === "succeeded"
+          ? 4400
+          : state === "partially_refunded"
+            ? 1500
+            : 0,
     });
     expect(
       host.querySelector('section[aria-label="Your test refund"]'),
     ).not.toBeNull();
     expect(host.textContent).toContain(
-      state === "succeeded"
+      state === "succeeded" || state === "partially_refunded"
         ? "Test refund confirmed"
         : "Test refund needs follow-up",
     );
+    if (state === "partially_refunded") {
+      expect(host.textContent).toContain("Partial refund verified");
+      expect(host.textContent).toContain("15.00 CAD of $44.00 CAD");
+      expect(host.textContent).not.toContain("Full refund verified");
+    }
     expect(host.textContent).not.toContain("Choose one test payment method");
     expect(host.querySelector(".stripe-checkout")).toBeNull();
     expect(host.querySelector(".paypal-checkout")).toBeNull();

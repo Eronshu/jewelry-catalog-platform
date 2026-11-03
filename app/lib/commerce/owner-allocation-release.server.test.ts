@@ -22,7 +22,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { applyStockCommand } from "./inventory.server";
+import { applyStockCommand, commandHash } from "./inventory.server";
 import { createTestQuote, reserveTestOrder } from "./orders.server";
 import {
   issueTestCheckoutQuote,
@@ -947,15 +947,92 @@ const applyReturn = (
   database = db,
   hook?: () => Promise<void>,
 ) => applyOwnerReturn(database, scope, actor, i, () => now + 100000, hook);
+// Historical migration fixtures must use the contract available at that schema.
+// Current runtime code is exercised only after all subsequent migrations apply.
+async function seedLegacyFullRefund(orderId: string) {
+  const requestId = crypto.randomUUID();
+  const source = (await db
+    .prepare("SELECT * FROM commerce_owner_refund_sources WHERE order_id=?")
+    .bind(orderId)
+    .first<Record<string, unknown>>())!;
+  const i = {
+    requestId,
+    orderId,
+    expectedVersion: source.version,
+    acknowledge: true,
+  };
+  const actorHash = await commandHash([
+    "owner-refund-actor-v1",
+    actor.email,
+    actor.sub,
+  ]);
+  const requestHash = await commandHash([
+    "owner-refund-v1",
+    scope,
+    actorHash,
+    i,
+  ]);
+  await db
+    .prepare(
+      `INSERT INTO commerce_owner_refund_intents(request_id,mode,instance_id,actor_hash,request_hash,order_id,capture_id,expected_version,operation_key,provider,account_ref,canonical_origin,transaction_ref,payment_intent_ref,provider_object_ref,payment_request_id,create_operation_key,amount_cents,recorded_at)
+    SELECT ?,mode,instance_id,?,?,order_id,capture_id,version,?,provider,account_ref,canonical_origin,transaction_ref,payment_intent_ref,provider_object_ref,payment_request_id,create_operation_key,amount_cents,? FROM commerce_owner_refund_sources WHERE order_id=?`,
+    )
+    .bind(requestId, actorHash, requestHash, requestId, now + 50000, orderId)
+    .run();
+  await db
+    .prepare("INSERT INTO commerce_owner_refund_dispatches VALUES(?,?,?)")
+    .bind(requestId, crypto.randomUUID(), now + 50000)
+    .run();
+  const refundId =
+    source.provider === "paypal"
+      ? `R${requestId.replaceAll("-", "").slice(0, 16).toUpperCase()}`
+      : `re_${requestId.replaceAll("-", "")}`;
+  await db
+    .prepare(
+      `INSERT INTO commerce_owner_refund_observations SELECT ?,request_id,?,'succeeded',amount_cents,amount_cents,? FROM commerce_owner_refund_intents WHERE request_id=?`,
+    )
+    .bind(crypto.randomUUID(), refundId, now + 50001, requestId)
+    .run();
+}
+async function upgradeCurrentRuntime() {
+  await platform?.dispose();
+  platform = undefined;
+  const migrations = join(current, "current-runtime-migrations");
+  mkdirSync(migrations);
+  for (const file of readdirSync(join(root, "migrations")).filter((f) =>
+    f.endsWith(".sql"),
+  ))
+    copyFileSync(join(root, "migrations", file), join(migrations, file));
+  configPath = configuration(current, migrations);
+  try {
+    migrate(current, configPath);
+  } finally {
+    await connect();
+  }
+}
 async function handedRefunded(
   paypal = false,
   multi = false,
   refundStatus = "succeeded",
   refund = true,
+  historical = false,
 ) {
   const item = await paid("shipping", multi, paypal);
   await apply(await request(item.orderId));
   await apply(await request(item.orderId, "ship"));
+  if (historical) {
+    await seedLegacyFullRefund(item.orderId);
+    if (paypal) {
+      const source = (await db
+        .prepare(
+          "SELECT provider_object_ref FROM commerce_owner_refund_intents WHERE order_id=?",
+        )
+        .bind(item.orderId)
+        .first<{ provider_object_ref: string }>())!;
+      await refundedEvent(item.orderId, source.provider_object_ref);
+    }
+    return item;
+  }
   const i = await refundInput(item.orderId);
   if (refund) {
     if (paypal) {
@@ -1017,15 +1094,101 @@ const release = (
     () => now + 120000,
     hook,
   );
+async function seedLegacyReturned(orderId: string) {
+  const h = (await db
+    .prepare("SELECT * FROM commerce_owner_return_handoffs WHERE order_id=?")
+    .bind(orderId)
+    .first<Record<string, unknown>>())!;
+  const refund = (await db
+    .prepare(
+      "SELECT observation_id FROM commerce_owner_return_refunds WHERE order_id=?",
+    )
+    .bind(orderId)
+    .first<{ observation_id: string }>())!;
+  const inspectionId = crypto.randomUUID();
+  for (const operation of ["inspect_sellable", "restock"]) {
+    const requestId =
+      operation === "inspect_sellable" ? inspectionId : crypto.randomUUID();
+    const lines = (
+      await db
+        .prepare(
+          "SELECT l.position,l.variant_id AS variantId,l.quantity,i.on_hand AS onHand,i.facebook_reserved AS facebookReserved,i.checkout_reserved AS checkoutReserved,i.allocated FROM commerce_order_lines l JOIN commerce_inventory i ON i.variant_id=l.variant_id WHERE l.order_id=? ORDER BY l.position",
+        )
+        .bind(orderId)
+        .all()
+    ).results;
+    const actorHash = await commandHash([
+      "owner-return-actor-v1",
+      actor.email,
+      actor.sub,
+    ]);
+    const stockHash = await commandHash([
+      "owner-return-stock-v1",
+      orderId,
+      lines,
+    ]);
+    const originalInput = {
+      requestId,
+      orderId,
+      operation,
+      expectedVersion: h.version,
+      expectedStockHash: stockHash,
+      acknowledge: true,
+    };
+    const requestHash = await commandHash([
+      "owner-return-v1",
+      scope,
+      actorHash,
+      originalInput,
+    ]);
+    await db
+      .prepare(
+        "INSERT INTO commerce_owner_return_commands VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .bind(
+        requestId,
+        `owner-return-${requestId}`,
+        scope.mode,
+        scope.instanceId,
+        actorHash,
+        requestHash,
+        orderId,
+        h.capture_id,
+        h.handoff_request_id,
+        operation === "restock" ? inspectionId : null,
+        operation === "restock" ? refund.observation_id : null,
+        operation,
+        h.version,
+        stockHash,
+        JSON.stringify(lines),
+        now + 100000,
+      )
+      .run();
+  }
+}
 async function unhandedRefunded(
   paypal = false,
   packed = false,
   status = "succeeded",
   refund = true,
   multi = false,
+  historical = false,
 ) {
   const item = await paid("shipping", multi, paypal);
   if (packed) await apply(await request(item.orderId));
+  if (historical) {
+    await seedLegacyFullRefund(item.orderId);
+    if (paypal) {
+      const source = (await db
+        .prepare(
+          "SELECT provider_object_ref FROM commerce_owner_refund_intents WHERE order_id=?",
+        )
+        .bind(item.orderId)
+        .first<{ provider_object_ref: string }>())!;
+      await refundedEvent(item.orderId, source.provider_object_ref);
+    }
+    return item;
+  }
   if (refund) {
     const i = await refundInput(item.orderId);
     if (paypal) {
@@ -1058,10 +1221,16 @@ describe("owner explicit retained refunded allocation release on real local D1",
   it("upgrades populated0028 preserving movement rowids, all history/stock/FKs/indexes/source guards without replay", async () => {
     await selectBaseline();
     await legacyHistory();
-    const returned = await handedRefunded(false, true);
-    await applyReturn(await returnInput(returned.orderId));
-    await applyReturn(await returnInput(returned.orderId, "restock"));
-    const kept = await unhandedRefunded(true, true);
+    const returned = await handedRefunded(false, true, "succeeded", true, true);
+    await seedLegacyReturned(returned.orderId);
+    const kept = await unhandedRefunded(
+      true,
+      true,
+      "succeeded",
+      true,
+      false,
+      true,
+    );
     await db
       .prepare(
         "INSERT INTO commerce_commands(id,request_hash,created_at) VALUES('gap-fixture',?,?)",
@@ -1103,6 +1272,7 @@ describe("owner explicit retained refunded allocation release on real local D1",
           .all()
       ).results,
     ).toEqual([]);
+    await upgradeCurrentRuntime();
     expect(
       await readOwnerAllocationRelease(db, scope, kept.orderId),
     ).toMatchObject({ canRelease: true });
@@ -1112,7 +1282,7 @@ describe("owner explicit retained refunded allocation release on real local D1",
   }, 30000);
   it("failed0029 migration rolls back original CHECK, rowids, histories, source guards and floors", async () => {
     await selectBaseline();
-    await unhandedRefunded();
+    await unhandedRefunded(false, false, "succeeded", true, false, true);
     const before = await allHistory(),
       oldSchema = await schema(),
       movements = await movementRows();

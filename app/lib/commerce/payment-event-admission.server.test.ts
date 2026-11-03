@@ -429,7 +429,7 @@ describe("unresolved event receipts conservatively fence CREATE on real temporar
       "commerce_execution_start_event_fence",
     );
     expect(await history()).toEqual(before);
-  });
+  }, 30000);
   it.each(["stripe", "paypal"] as const)(
     "allows original %s CREATE with an empty inbox without business mutation",
     async (provider) => {

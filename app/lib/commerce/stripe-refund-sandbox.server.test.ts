@@ -28,7 +28,8 @@ const a: StripeSandboxRefundAssociation = {
   paymentIntentId: "pi_FictionalOnly123",
   amountCents: 4005,
 };
-function fixture() {
+function fixture(input: StripeSandboxRefundAssociation = a) {
+  const a = input;
   const metadata = {
     test_mode: "local-test",
     instance_id: c.instanceId,
@@ -64,8 +65,8 @@ function fixture() {
     currency: "cad",
     amount: a.amountCents,
     amount_captured: a.amountCents,
-    amount_refunded: 0,
-    refunded: false,
+    amount_refunded: a.expectedRefundedCents ?? 0,
+    refunded: a.expectedRefundedCents === a.amountCents,
     disputed: false,
   };
   const refund: Record<string, unknown> = {
@@ -74,13 +75,20 @@ function fixture() {
     charge: a.chargeId,
     payment_intent: a.paymentIntentId,
     currency: "cad",
-    amount: a.amountCents,
+    amount: a.refundCents ?? a.amountCents,
     status: "pending",
     metadata: {
       ...metadata,
       refund_request_id: a.requestId,
       refund_operation_key: a.operationKey,
       capture_id: a.captureId,
+      ...(a.refundCents === undefined
+        ? {}
+        : {
+            refund_version: "2",
+            refund_amount_cents: String(a.refundCents),
+            refund_expected_refunded_cents: String(a.expectedRefundedCents),
+          }),
     },
   };
   const list = { object: "list", data: [refund], has_more: false };
@@ -290,5 +298,289 @@ describe("strict injected Stripe Sandbox refund adapter", () => {
       ),
     ).rejects.toMatchObject({ code: "invalid_config" });
     expect(p.call).not.toHaveBeenCalled();
+  });
+  it("refunds a partial amount then the remainder under separate original request keys", async () => {
+    const first = { ...a, refundCents: 1000, expectedRefundedCents: 0 };
+    const remainder = {
+      ...a,
+      requestId: "66666666-6666-4666-8666-666666666666",
+      operationKey: "66666666-6666-4666-8666-666666666666",
+      refundCents: 3005,
+      expectedRefundedCents: 1000,
+    };
+    const bodies: URLSearchParams[] = [];
+    const keys: string[] = [];
+    for (const input of [first, remainder]) {
+      const p = fixture(input);
+      const hook = vi.fn(async () => {
+        expect(p.call).toHaveBeenCalledTimes(3);
+      });
+      expect(await createStripeSandboxRefund(c, input, p.call, hook)).toBe(
+        "re_FictionalOnly123",
+      );
+      expect(hook).toHaveBeenCalledOnce();
+      const [, post] = p.call.mock.calls.at(-1)!;
+      bodies.push(new URLSearchParams(post.body as string));
+      keys.push(new Headers(post.headers).get("Idempotency-Key")!);
+      expect(await retrieveStripeSandboxRefund(c, input, p.call)).toEqual({
+        refundId: "re_FictionalOnly123",
+        status: "pending",
+        amountCents: 4005,
+        refundedCents: 0,
+      });
+      p.refund.status = "succeeded";
+      p.ch.amount_refunded = input.expectedRefundedCents + input.refundCents;
+      p.ch.refunded = p.ch.amount_refunded === input.amountCents;
+      expect(
+        await retrieveStripeSandboxRefund(
+          c,
+          input,
+          p.call,
+          "re_FictionalOnly123",
+        ),
+      ).toEqual({
+        refundId: "re_FictionalOnly123",
+        status: "succeeded",
+        amountCents: 4005,
+        refundedCents: input.refundCents,
+      });
+    }
+    expect(keys).toEqual([first.operationKey, remainder.operationKey]);
+    expect(bodies.map((body) => body.get("amount"))).toEqual(["1000", "3005"]);
+    expect(bodies.map((body) => body.get("metadata[refund_version]"))).toEqual([
+      "2",
+      "2",
+    ]);
+    expect(
+      bodies.map((body) => body.get("metadata[refund_amount_cents]")),
+    ).toEqual(["1000", "3005"]);
+    expect(
+      bodies.map((body) =>
+        body.get("metadata[refund_expected_refunded_cents]"),
+      ),
+    ).toEqual(["0", "1000"]);
+  });
+  it.each([
+    { refundCents: 0, expectedRefundedCents: 0 },
+    { refundCents: -1, expectedRefundedCents: 0 },
+    { refundCents: 1.5, expectedRefundedCents: 0 },
+    { refundCents: 4006, expectedRefundedCents: 0 },
+    { refundCents: 1000, expectedRefundedCents: 3006 },
+    { refundCents: 1000, expectedRefundedCents: -1 },
+    { refundCents: 1000, expectedRefundedCents: 0.5 },
+    { refundCents: Number.MAX_SAFE_INTEGER + 1, expectedRefundedCents: 0 },
+    { refundCents: 1, expectedRefundedCents: Number.MAX_SAFE_INTEGER + 1 },
+    { refundCents: 1000 },
+    { expectedRefundedCents: 0 },
+    { refundCents: undefined, expectedRefundedCents: undefined },
+    { refundCents: "1000", expectedRefundedCents: 0 },
+    { refundCents: 1000, expectedRefundedCents: 0, extra: true },
+  ])(
+    "rejects malformed or over-budget partial cents before GET: %j",
+    async (amounts) => {
+      const p = fixture();
+      await expect(
+        createStripeSandboxRefund(
+          c,
+          { ...a, ...amounts } as StripeSandboxRefundAssociation,
+          p.call,
+          async () => {},
+        ),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+      expect(p.call).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects partial-field getters and symbol extras without invoking them", async () => {
+    const p = fixture();
+    const getter = vi.fn(() => 1000);
+    const raw = {
+      ...a,
+      get refundCents() {
+        return getter();
+      },
+      expectedRefundedCents: 0,
+    };
+    for (const input of [
+      raw,
+      { ...a, refundCents: 1000, expectedRefundedCents: 0, [Symbol()]: true },
+    ]) {
+      await expect(
+        retrieveStripeSandboxRefund(c, input, p.call),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+    }
+    expect(getter).not.toHaveBeenCalled();
+    expect(p.call).not.toHaveBeenCalled();
+  });
+  it.each([0, 999, 1001, 4005])(
+    "rejects unexpected prior aggregate %s before partial POST",
+    async (aggregate) => {
+      const input = { ...a, refundCents: 3005, expectedRefundedCents: 1000 };
+      const p = fixture(input);
+      const hook = vi.fn(async () => {});
+      p.ch.amount_refunded = aggregate;
+      p.ch.refunded = aggregate === a.amountCents;
+      await expect(
+        createStripeSandboxRefund(c, input, p.call, hook),
+      ).rejects.toMatchObject({ code: "invalid_response" });
+      expect(hook).not.toHaveBeenCalled();
+      expect(p.call.mock.calls.every(([, init]) => init.method === "GET")).toBe(
+        true,
+      );
+    },
+  );
+  it.each([0, 1000, 1999, 2001, 4005])(
+    "rejects succeeded partial refund with unexpected charge aggregate %s",
+    async (aggregate) => {
+      const input = { ...a, refundCents: 1000, expectedRefundedCents: 1000 };
+      const p = fixture(input);
+      p.refund.status = "succeeded";
+      p.ch.amount_refunded = aggregate;
+      p.ch.refunded = aggregate === a.amountCents;
+      await expect(
+        retrieveStripeSandboxRefund(c, input, p.call, "re_FictionalOnly123"),
+      ).rejects.toMatchObject({ code: "invalid_response" });
+    },
+  );
+  it.each([
+    ["account", "id", "acct_OtherFictional123"],
+    ["pi", "metadata", {}],
+    ["pi", "amount_received", 1000],
+    ["ch", "amount_captured", 1000],
+    ["refund", "id", "re_OtherFictional123"],
+    ["refund", "amount", 4005],
+    ["refund", "currency", "usd"],
+    ["refund", "charge", "ch_OtherFictional123"],
+    ["refund", "payment_intent", "pi_OtherFictional123"],
+    ["refund", "status", "unknown"],
+    ["refund", "metadata", {}],
+  ] as const)("rejects partial %s.%s mismatch", async (target, key, value) => {
+    const input = { ...a, refundCents: 1000, expectedRefundedCents: 0 };
+    const p = fixture(input);
+    p[target][key] = value;
+    await expect(
+      retrieveStripeSandboxRefund(c, input, p.call, "re_FictionalOnly123"),
+    ).rejects.toMatchObject({
+      code: target === "account" ? "account_mismatch" : "invalid_response",
+    });
+  });
+  it.each([
+    "refund_version",
+    "refund_amount_cents",
+    "refund_expected_refunded_cents",
+  ])("rejects partial refund metadata mismatch for %s", async (key) => {
+    const input = { ...a, refundCents: 1000, expectedRefundedCents: 0 };
+    const p = fixture(input);
+    (p.refund.metadata as Record<string, string>)[key] = "wrong";
+    await expect(
+      retrieveStripeSandboxRefund(c, input, p.call),
+    ).rejects.toMatchObject({ code: "invalid_response" });
+  });
+  it.each(["pending", "requires_action", "failed", "canceled"])(
+    "reports no confirmed request cents for partial %s despite aggregate prior refunds",
+    async (status) => {
+      const input = { ...a, refundCents: 1000, expectedRefundedCents: 1000 };
+      const p = fixture(input);
+      p.refund.status = status;
+      expect(
+        await retrieveStripeSandboxRefund(
+          c,
+          input,
+          p.call,
+          "re_FictionalOnly123",
+        ),
+      ).toMatchObject({ status, amountCents: 4005, refundedCents: 0 });
+    },
+  );
+  it("never retries an unknown partial POST and reconciles only with GETs", async () => {
+    const input = { ...a, refundCents: 1000, expectedRefundedCents: 0 };
+    const p = fixture(input);
+    const transport = vi.fn<StripeSandboxFetch>(async (url, init) => {
+      if (init.method === "POST")
+        throw new Error("Synthetic lost acknowledgment");
+      return p.call(url, init);
+    });
+    await expect(
+      createStripeSandboxRefund(c, input, transport, async () => {}),
+    ).rejects.toMatchObject({
+      code: "unknown_outcome",
+      operationKey: input.operationKey,
+    });
+    p.refund.status = "succeeded";
+    p.ch.amount_refunded = 1000;
+    expect(
+      await retrieveStripeSandboxRefund(c, input, transport),
+    ).toMatchObject({
+      status: "succeeded",
+      refundedCents: 1000,
+    });
+    expect(
+      transport.mock.calls.filter(([, init]) => init.method === "POST"),
+    ).toHaveLength(1);
+  });
+  it("rejects revoked authorization after partial canonical reads without a POST", async () => {
+    const input = { ...a, refundCents: 1000, expectedRefundedCents: 1000 };
+    const p = fixture(input);
+    await expect(
+      createStripeSandboxRefund(c, input, p.call, async () => {
+        expect(p.call).toHaveBeenCalledTimes(3);
+        throw new Error("Synthetic expired authorization");
+      }),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    expect(p.call.mock.calls.every(([, init]) => init.method === "GET")).toBe(
+      true,
+    );
+  });
+  it("ignores unrelated earlier partial refunds but rejects ambiguous original request candidates", async () => {
+    const input = { ...a, refundCents: 1000, expectedRefundedCents: 1000 };
+    const p = fixture(input);
+    const earlier = {
+      ...p.refund,
+      id: "re_EarlierFictional123",
+      metadata: {
+        ...(p.refund.metadata as Record<string, string>),
+        refund_request_id: "66666666-6666-4666-8666-666666666666",
+        refund_operation_key: "66666666-6666-4666-8666-666666666666",
+      },
+    };
+    p.list.data.unshift(earlier);
+    expect(await retrieveStripeSandboxRefund(c, input, p.call)).toMatchObject({
+      refundId: "re_FictionalOnly123",
+      status: "pending",
+    });
+    p.list.data.push({ ...p.refund, id: "re_AmbiguousFictional123" });
+    await expect(
+      retrieveStripeSandboxRefund(c, input, p.call),
+    ).rejects.toMatchObject({
+      code: "reconcile_required",
+    });
+  });
+  it("preserves exact legacy POST metadata, query parameters and pending output", async () => {
+    const p = fixture();
+    await createStripeSandboxRefund(c, a, p.call, async () => {});
+    expect(p.call.mock.calls.at(-1)![1].body).toBe(
+      new URLSearchParams({
+        charge: a.chargeId,
+        amount: "4005",
+        "metadata[test_mode]": "local-test",
+        "metadata[instance_id]": c.instanceId,
+        "metadata[account_ref]": c.expectedAccountId,
+        "metadata[order_id]": a.orderId,
+        "metadata[attempt_id]": a.paymentRequestId,
+        "metadata[create_operation_key]": a.createOperationKey,
+        "metadata[refund_request_id]": a.requestId,
+        "metadata[refund_operation_key]": a.operationKey,
+        "metadata[capture_id]": a.captureId,
+      }).toString(),
+    );
+    p.ch.amount_refunded = 123;
+    expect(await retrieveStripeSandboxRefund(c, a, p.call)).toEqual({
+      refundId: "re_FictionalOnly123",
+      status: "pending",
+      amountCents: 4005,
+      refundedCents: 123,
+    });
+    expect(p.call.mock.calls.at(-2)![0]).toBe(
+      `https://api.stripe.com/v1/refunds?charge=${a.chargeId}&limit=100`,
+    );
   });
 });

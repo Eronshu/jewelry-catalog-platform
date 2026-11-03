@@ -188,3 +188,48 @@ it("keeps local receipt lookup independent of both credential and write/query op
   expect(operations.read).not.toHaveBeenCalled();
   expect(transport).not.toHaveBeenCalled();
 });
+
+it("carries the explicit partial amount and original budget through Stripe start/query and credential-free paused lookup", async () => {
+  operations.read.mockResolvedValue({ provider: "stripe" });
+  env.COMMERCE_STRIPE_SANDBOX = "local-test";
+  env.COMMERCE_STRIPE_ACCOUNT_ID = `acct_${"0".repeat(16)}`;
+  env.COMMERCE_STRIPE_TEST_SECRET = `sk_test_${"0".repeat(24)}`;
+  const amounts = { refundCents: "1000", expectedRefundedCents: "1500" };
+  expect((await call("start", amounts)).status).toBe(200);
+  expect(operations.stripeStart.mock.calls[0][3]).toMatchObject({
+    refundCents: 1000,
+    expectedRefundedCents: 1500,
+  });
+  delete env.COMMERCE_OWNER_REFUND_WRITES;
+  expect((await call("query", amounts)).status).toBe(200);
+  expect(operations.stripeQuery.mock.calls[0][3]).toMatchObject({
+    refundCents: 1000,
+    expectedRefundedCents: 1500,
+  });
+  delete env.COMMERCE_STRIPE_TEST_SECRET;
+  delete env.COMMERCE_OWNER_REFUND_QUERIES;
+  expect((await call("lookup", amounts)).status).toBe(200);
+  expect(operations.lookup.mock.calls[0][3]).toMatchObject({
+    refundCents: 1000,
+    expectedRefundedCents: 1500,
+  });
+});
+it("rejects unpaired or inexact partial inputs before DB and refuses PayPal partial dispatch", async () => {
+  for (const extra of [
+    { refundCents: "100" },
+    { expectedRefundedCents: "0" },
+    { refundCents: "1.1", expectedRefundedCents: "0" },
+    { refundCents: "0", expectedRefundedCents: "0" },
+    { refundCents: "1e2", expectedRefundedCents: "0" },
+    { refundCents: "100", expectedRefundedCents: "-1" },
+    { refundCents: "9007199254740992", expectedRefundedCents: "0" },
+  ] as Record<string, string>[])
+    expect((await call("start", extra)).status).toBe(422);
+  expect(operations.read).not.toHaveBeenCalled();
+  expect(
+    (await call("start", { refundCents: "100", expectedRefundedCents: "0" }))
+      .status,
+  ).toBe(422);
+  expect(operations.paypalStart).not.toHaveBeenCalled();
+  expect(operations.stripeStart).not.toHaveBeenCalled();
+});

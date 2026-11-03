@@ -67,6 +67,7 @@ const migration = () =>
 let directory: string,
   baseline: string,
   upgraded: string,
+  baseline29: string,
   current: string,
   configPath: string,
   platform: PlatformProxy<Env> | undefined,
@@ -157,6 +158,18 @@ beforeAll(() => {
   mkdirSync(upgraded);
   cpSync(join(baseline, "state"), join(upgraded, "state"), { recursive: true });
   migrate(upgraded, configuration(upgraded, join(root, "migrations")));
+  baseline29 = join(directory, "baseline-0029");
+  mkdirSync(baseline29);
+  cpSync(join(baseline, "state"), join(baseline29, "state"), {
+    recursive: true,
+  });
+  const migrations29 = join(baseline29, "migrations");
+  mkdirSync(migrations29);
+  for (const file of readdirSync(join(root, "migrations")).filter(
+    (f) => f.endsWith(".sql") && f < "0030",
+  ))
+    copyFileSync(join(root, "migrations", file), join(migrations29, file));
+  migrate(baseline29, configuration(baseline29, migrations29));
 }, 30000);
 beforeEach(async () => {
   current = mkdtempSync(join(directory, "case-"));
@@ -959,6 +972,7 @@ describe("owner one-shot Stripe test refund on real local D1", () => {
           .all()
       ).results,
     ).toEqual([]);
+    await upgrade30();
     expect(
       await lookupOwnerRefundCommand(db, scope, actor, first),
     ).toMatchObject({ state: "recorded", receipt: { state: "pending" } });
@@ -1598,4 +1612,908 @@ describe("owner one-shot PayPal full refund on the shared ledger", () => {
     expect(p.state.postCount).toBe(1);
     expect(await rows("commerce_owner_refund_observations")).toEqual([]);
   });
+});
+
+const migration30 = () =>
+  readFileSync(
+    join(root, "migrations/0030_commerce_partial_refunds.sql"),
+    "utf8",
+  );
+async function select29() {
+  await platform?.dispose();
+  platform = undefined;
+  rmSync(join(current, "state"), { recursive: true, force: true });
+  cpSync(join(baseline29, "state"), join(current, "state"), {
+    recursive: true,
+  });
+  await connect();
+  await seedScope();
+}
+async function upgrade30(sql = migration30()) {
+  await platform?.dispose();
+  platform = undefined;
+  const migrations = join(current, "upgrade-0030");
+  mkdirSync(migrations);
+  for (const file of readdirSync(join(root, "migrations")).filter(
+    (f) => f.endsWith(".sql") && f < "0030",
+  ))
+    copyFileSync(join(root, "migrations", file), join(migrations, file));
+  writeFileSync(join(migrations, "0030_commerce_partial_refunds.sql"), sql);
+  configPath = configuration(current, migrations);
+  try {
+    migrate(current, configPath);
+  } finally {
+    await connect();
+  }
+}
+async function seedRefund29(orderId: string, succeeded = true) {
+  const i: OwnerRefundInput = {
+    requestId: crypto.randomUUID(),
+    orderId,
+    expectedVersion: (await db
+      .prepare("SELECT version FROM commerce_orders WHERE id=?")
+      .bind(orderId)
+      .first<{ version: number }>())!.version,
+    acknowledge: true,
+  };
+  const actorHash = await commandHash([
+    "owner-refund-actor-v1",
+    actor.email,
+    actor.sub,
+  ]);
+  const requestHash = await commandHash([
+    "owner-refund-v1",
+    scope,
+    actorHash,
+    i,
+  ]);
+  await db
+    .prepare(
+      `INSERT INTO commerce_owner_refund_intents(request_id,mode,instance_id,actor_hash,request_hash,order_id,capture_id,expected_version,operation_key,provider,account_ref,canonical_origin,transaction_ref,payment_intent_ref,provider_object_ref,payment_request_id,create_operation_key,amount_cents,recorded_at)
+    SELECT ?,mode,instance_id,?,?,order_id,capture_id,version,?,provider,account_ref,canonical_origin,transaction_ref,payment_intent_ref,provider_object_ref,payment_request_id,create_operation_key,amount_cents,? FROM commerce_owner_refund_sources WHERE order_id=?`,
+    )
+    .bind(
+      i.requestId,
+      actorHash,
+      requestHash,
+      i.requestId,
+      now + 50000,
+      orderId,
+    )
+    .run();
+  await db
+    .prepare("INSERT INTO commerce_owner_refund_dispatches VALUES(?,?,?)")
+    .bind(i.requestId, crypto.randomUUID(), now + 50000)
+    .run();
+  for (const status of ["pending", succeeded ? "succeeded" : "pending"])
+    await db
+      .prepare(
+        `INSERT INTO commerce_owner_refund_observations SELECT ?,request_id,?, ?,amount_cents,CASE WHEN ?='succeeded' THEN amount_cents ELSE 0 END,? FROM commerce_owner_refund_intents WHERE request_id=?`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        (await db
+          .prepare(
+            "SELECT provider FROM commerce_owner_refund_intents WHERE request_id=?",
+          )
+          .bind(i.requestId)
+          .first<{ provider: string }>())!.provider === "paypal"
+          ? `R${i.requestId.replaceAll("-", "").slice(0, 16).toUpperCase()}`
+          : `re_${i.requestId.replaceAll("-", "")}`,
+        status,
+        status,
+        now + 50001,
+        i.requestId,
+      )
+      .run();
+  return i;
+}
+async function seedReturned29(orderId: string) {
+  const h = (await db
+    .prepare("SELECT * FROM commerce_owner_return_handoffs WHERE order_id=?")
+    .bind(orderId)
+    .first<Record<string, unknown>>())!;
+  const refund = (await db
+    .prepare(
+      "SELECT observation_id FROM commerce_owner_return_refunds WHERE order_id=? ORDER BY refunded_at DESC,observation_id DESC LIMIT 1",
+    )
+    .bind(orderId)
+    .first<{ observation_id: string }>())!;
+  const inspectionId = crypto.randomUUID();
+  for (const operation of ["inspect_sellable", "restock"]) {
+    const rid =
+      operation === "inspect_sellable" ? inspectionId : crypto.randomUUID();
+    const lines = (
+      await db
+        .prepare(
+          "SELECT l.position,l.variant_id AS variantId,l.quantity,i.on_hand AS onHand,i.facebook_reserved AS facebookReserved,i.checkout_reserved AS checkoutReserved,i.allocated FROM commerce_order_lines l JOIN commerce_inventory i ON i.variant_id=l.variant_id WHERE l.order_id=? ORDER BY l.position",
+        )
+        .bind(orderId)
+        .all()
+    ).results;
+    await db
+      .prepare(
+        "INSERT INTO commerce_owner_return_commands VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .bind(
+        rid,
+        `owner-return-${rid}`,
+        scope.mode,
+        scope.instanceId,
+        "a".repeat(64),
+        "b".repeat(64),
+        orderId,
+        h.capture_id,
+        h.handoff_request_id,
+        operation === "restock" ? inspectionId : null,
+        operation === "restock" ? refund.observation_id : null,
+        operation,
+        h.version,
+        "c".repeat(64),
+        JSON.stringify(lines),
+        now + 60000,
+      )
+      .run();
+  }
+  return refund.observation_id;
+}
+async function serialProvider(orderId: string) {
+  const p = await provider(orderId);
+  p.state.paid = true;
+  const total = (await readOwnerRefund(db, scope, orderId))!.amountCents;
+  const refunds: Array<Record<string, unknown>> = [];
+  const state = {
+    status: "succeeded",
+    losePost: false,
+    postCount: 0,
+    wrong: false,
+  };
+  const call = vi.fn<StripeSandboxFetch>(async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === "/v1/refunds" && init.method === "POST") {
+      state.postCount++;
+      const body = new URLSearchParams(init.body as string);
+      const amount = Number(body.get("amount"));
+      expect(
+        Number.isSafeInteger(amount) && amount > 0 && amount <= total,
+      ).toBe(true);
+      const metadata = Object.fromEntries(
+        [...body]
+          .filter(([k]) => k.startsWith("metadata["))
+          .map(([k, v]) => [k.slice(9, -1), v]),
+      );
+      expect(new Headers(init.headers).get("Idempotency-Key")).toBe(
+        metadata.refund_operation_key,
+      );
+      const refund = {
+        id: `re_${orderId.slice(6).replaceAll("-", "")}${state.postCount}`,
+        object: "refund",
+        charge: p.chargeId,
+        payment_intent: p.intentId,
+        currency: "cad",
+        amount,
+        status: state.status,
+        metadata: state.wrong ? {} : metadata,
+      };
+      refunds.push(refund);
+      if (state.losePost) throw new Error("Fictional unknown POST");
+      return Response.json(refund);
+    }
+    if (path.startsWith("/v1/refunds/"))
+      return Response.json(
+        refunds.find((r) => r.id === path.split("/").at(-1)),
+      );
+    if (path === "/v1/refunds")
+      return Response.json({ object: "list", data: refunds, has_more: false });
+    const response = await p.call(url, init);
+    if (path === `/v1/charges/${p.chargeId}`) {
+      const charge = (await response.json()) as Record<string, unknown>;
+      const sum = refunds
+        .filter((r) => r.status === "succeeded")
+        .reduce((sum, r) => sum + Number(r.amount), 0);
+      charge.amount_refunded = sum;
+      charge.refunded = sum === total;
+      return Response.json(charge);
+    }
+    return response;
+  });
+  return { state, call, refunds, total };
+}
+const partialInput = async (
+  orderId: string,
+  refundCents: number,
+  expectedRefundedCents = 0,
+): Promise<OwnerRefundInput> => ({
+  ...(await refundInput(orderId)),
+  refundCents,
+  expectedRefundedCents,
+});
+import { readOwnerReturn, applyOwnerReturn } from "./owner-return.server";
+import {
+  readOwnerAllocationRelease,
+  applyOwnerAllocationRelease,
+} from "./owner-allocation-release.server";
+
+describe("serial partial Stripe refunds", () => {
+  it("records partial then exact remainder with aggregate detail, unchanged capture/stock and distinct per-request receipts", async () => {
+    const item = await paid(),
+      p = await serialProvider(item.orderId),
+      i = await partialInput(item.orderId, 1000);
+    const before = await allHistory();
+    expect(await start(i, p.call)).toMatchObject({
+      state: "succeeded",
+      amountCents: p.total,
+      refundedCents: 1000,
+      refundCents: 1000,
+      expectedRefundedCents: 0,
+    });
+    expect(await readOwnerRefund(db, scope, item.orderId)).toMatchObject({
+      state: "partially_refunded",
+      refundedCents: 1000,
+      remainingCents: p.total - 1000,
+      fullyRefunded: false,
+      canStart: false,
+      canStartPartial: true,
+      canQuery: false,
+      requestId: i.requestId,
+      currentRequestRefundCents: 1000,
+      currentRequestPriorRefundedCents: 0,
+      history: [{ requestId: i.requestId, refundedCents: 1000 }],
+    });
+    expect(await readOwnerFulfillment(db, scope, item.orderId)).toMatchObject({
+      canPack: false,
+      canHandoff: false,
+    });
+    expect(
+      await readOwnerAllocationRelease(db, scope, item.orderId),
+    ).toMatchObject({ canRelease: false });
+    await expect(
+      start(await refundInput(item.orderId), p.call),
+    ).rejects.toMatchObject({ code: "conflict" });
+    const remainder = await partialInput(item.orderId, p.total - 1000, 1000);
+    expect(await start(remainder, p.call)).toMatchObject({
+      state: "succeeded",
+      refundedCents: p.total - 1000,
+      expectedRefundedCents: 1000,
+    });
+    const detail = await readOwnerRefund(db, scope, item.orderId);
+    expect(detail).toMatchObject({
+      state: "succeeded",
+      refundedCents: p.total,
+      remainingCents: 0,
+      fullyRefunded: true,
+      canStartPartial: false,
+      requestId: remainder.requestId,
+    });
+    expect(detail!.history).toHaveLength(2);
+    const after = await allHistory();
+    for (const [name, history] of Object.entries(before))
+      if (!name.startsWith("commerce_owner_refund_"))
+        expect(after[name], name).toEqual(history);
+    await start(i, p.call);
+    await query(i, p.call);
+    await start(remainder, p.call);
+    await query(remainder, p.call);
+    expect(p.state.postCount).toBe(2);
+    await expect(
+      start(await partialInput(item.orderId, 1, p.total), p.call),
+    ).rejects.toMatchObject({ code: "conflict" });
+  });
+  it.each(["pending", "failed", "canceled", "requires_action", "unknown"])(
+    "%s locks serial budget and preserves original recovery input",
+    async (status) => {
+      const item = await paid(),
+        p = await serialProvider(item.orderId),
+        i = await partialInput(item.orderId, 500);
+      p.state.status = status === "unknown" ? "succeeded" : status;
+      p.state.losePost = status === "unknown";
+      expect(await start(i, p.call)).toMatchObject({
+        state: status === "pending" ? "pending" : "review_required",
+        refundedCents: 0,
+      });
+      expect(await readOwnerRefund(db, scope, item.orderId)).toMatchObject({
+        requestId: i.requestId,
+        refundedCents: 0,
+        canStartPartial: false,
+        canQuery: true,
+        currentRequestRefundCents: 500,
+        currentRequestPriorRefundedCents: 0,
+      });
+      await expect(
+        start(await partialInput(item.orderId, 200), p.call),
+      ).rejects.toMatchObject({ code: "conflict" });
+      await expect(
+        query({ ...i, refundCents: 501 }, p.call),
+      ).rejects.toMatchObject({ code: "conflict" });
+      await expect(
+        query({ ...i, expectedRefundedCents: 1 }, p.call),
+      ).rejects.toMatchObject({ code: "conflict" });
+      p.refunds[0].status = "succeeded";
+      expect(await query(i, p.call)).toMatchObject({
+        state: "succeeded",
+        refundedCents: 500,
+      });
+      expect(p.state.postCount).toBe(1);
+    },
+  );
+  it("concurrent different UUIDs reserve a single serial budget; duplicate same UUID never re-POSTs", async () => {
+    const item = await paid(),
+      p = await serialProvider(item.orderId),
+      i = await partialInput(item.orderId, 1000),
+      j = { ...i, requestId: crypto.randomUUID() };
+    const results = await Promise.allSettled([
+      start(i, p.call),
+      start(j, p.call),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await rows("commerce_owner_refund_intents")).toHaveLength(1);
+    expect(p.state.postCount).toBe(1);
+    const winning =
+      (await rows("commerce_owner_refund_intents"))[0].request_id ===
+      i.requestId
+        ? i
+        : j;
+    await Promise.all([start(winning, p.call), start(winning, p.call)]);
+    expect(p.state.postCount).toBe(1);
+  });
+  it("validates exact paired integer input, rejects PayPal partials, preserves v1 hashing and v2 identities", async () => {
+    const item = await paid(),
+      p = await serialProvider(item.orderId),
+      i = await partialInput(item.orderId, 400);
+    const invalid = [
+      { ...i, refundCents: 0 },
+      { ...i, refundCents: 1.1 },
+      { ...i, expectedRefundedCents: -1 },
+      { ...i, extra: true },
+      { ...(await refundInput(item.orderId)), refundCents: 400 },
+    ];
+    for (const bad of invalid)
+      await expect(
+        start(bad as OwnerRefundInput, p.call),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+    const getter = vi.fn(() => 0);
+    await expect(
+      start(
+        {
+          ...i,
+          get expectedRefundedCents() {
+            return getter();
+          },
+        },
+        p.call,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(getter).not.toHaveBeenCalled();
+    await expect(
+      start({ ...i, expectedRefundedCents: 1 }, p.call),
+    ).rejects.toMatchObject({ code: "conflict" });
+    await expect(
+      start({ ...i, refundCents: p.total + 1 }, p.call),
+    ).rejects.toMatchObject({ code: "conflict" });
+    const paypal = await paid("pickup", false, true),
+      pp = await paypalRefundProvider(paypal.orderId);
+    await expect(
+      startPayPal(await partialInput(paypal.orderId, 100), pp.call),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(pp.call).not.toHaveBeenCalled();
+    await start(i, p.call);
+    const saved = (await rows("commerce_owner_refund_intents"))[0];
+    const actorHash = await commandHash([
+      "owner-refund-actor-v1",
+      actor.email,
+      actor.sub,
+    ]);
+    expect(saved).toMatchObject({
+      input_contract: "partial-v2",
+      amount_cents: p.total,
+      refund_cents: 400,
+      prior_refunded_cents: 0,
+      request_hash: await commandHash(["owner-refund-v2", scope, actorHash, i]),
+    });
+    const legacy = await paid(),
+      old = await refundInput(legacy.orderId),
+      oldp = await refundProvider(legacy.orderId);
+    const receipt = await start(old, oldp.call);
+    expect(Object.keys(receipt).sort()).toEqual(
+      [
+        "testOnly",
+        "requestId",
+        "orderId",
+        "state",
+        "amountCents",
+        "refundedCents",
+      ].sort(),
+    );
+    expect((await rows("commerce_owner_refund_intents"))[1]).toMatchObject({
+      input_contract: "legacy-full-v1",
+      request_hash: await commandHash([
+        "owner-refund-v1",
+        scope,
+        actorHash,
+        old,
+      ]),
+    });
+  });
+  it.each(["intents", "dispatches"])(
+    "v2 lost/ignored %s acknowledgment cannot authorize provider mutation",
+    async (table) => {
+      const item = await paid(),
+        p = await serialProvider(item.orderId),
+        i = await partialInput(item.orderId, 400);
+      await start(
+        i,
+        p.call,
+        faultDatabase(
+          (sql) => sql.includes(`INSERT INTO commerce_owner_refund_${table}`),
+          "after",
+        ),
+      );
+      expect(p.call).not.toHaveBeenCalled();
+      await start(i, p.call);
+      expect(p.call).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    ["intents", "ignore"],
+    ["dispatches", "ignore"],
+    ["intents", "unknown"],
+    ["dispatches", "unknown"],
+  ] as const)(
+    "v2 %s %s write cannot send a refund POST",
+    async (table, mode) => {
+      const item = await paid(),
+        p = await serialProvider(item.orderId),
+        i = await partialInput(item.orderId, 400);
+      if (mode === "ignore")
+        await db
+          .prepare(
+            `CREATE TRIGGER fixture_v2_ignore BEFORE INSERT ON commerce_owner_refund_${table} BEGIN SELECT RAISE(IGNORE); END`,
+          )
+          .run();
+      const run = start(
+        i,
+        p.call,
+        mode === "unknown"
+          ? faultDatabase(
+              (sql) =>
+                sql.includes(`INSERT INTO commerce_owner_refund_${table}`),
+              "unknown",
+            )
+          : db,
+      );
+      if (table === "intents" && mode === "ignore")
+        await expect(run).rejects.toMatchObject({ code: "unavailable" });
+      else await run;
+      expect(p.call).not.toHaveBeenCalled();
+    },
+  );
+  it("SQL independently fences stale prior, over-budget, legacy-full replay, unresolved work and duplicate provider IDs", async () => {
+    const item = await paid(),
+      p = await serialProvider(item.orderId),
+      i = await partialInput(item.orderId, 500);
+    await start(i, p.call);
+    const columns = (
+      await db
+        .prepare("PRAGMA table_info(commerce_owner_refund_intents)")
+        .all<{ name: string }>()
+    ).results.map((c) => c.name);
+    const clone = (refund: number, prior: number, contract = "partial-v2") => {
+      const id = crypto.randomUUID();
+      const substitutions: Record<string, unknown> = {
+        request_id: id,
+        operation_key: id,
+        request_hash: "d".repeat(64),
+        refund_cents: refund,
+        prior_refunded_cents: prior,
+        input_contract: contract,
+      };
+      const selected = columns
+        .map((c) => (Object.hasOwn(substitutions, c) ? "?" : c))
+        .join(",");
+      return db
+        .prepare(
+          `INSERT INTO commerce_owner_refund_intents(${columns.join(",")}) SELECT ${selected} FROM commerce_owner_refund_intents WHERE request_id=?`,
+        )
+        .bind(
+          ...columns
+            .filter((c) => Object.hasOwn(substitutions, c))
+            .map((c) => substitutions[c]),
+          i.requestId,
+        )
+        .run();
+    };
+    await expect(clone(200, 0)).rejects.toThrow();
+    await expect(clone(p.total, 500)).rejects.toThrow();
+    await expect(clone(p.total, 0, "legacy-full-v1")).rejects.toThrow();
+    await clone(200, 500);
+    await expect(clone(100, 500)).rejects.toThrow();
+    expect(await rows("commerce_owner_refund_intents")).toHaveLength(2);
+    expect(
+      (await readOwnerRefund(db, scope, item.orderId))!.refundedCents,
+    ).toBe(500);
+    expect(p.state.postCount).toBe(1);
+  });
+  it("v2 final browser authorization is checked after provider waits and before any POST", async () => {
+    const item = await paid(),
+      p = await serialProvider(item.orderId),
+      i = await partialInput(item.orderId, 400),
+      revoked = new Error("Fictional revoked browser");
+    await expect(
+      start(i, p.call, db, async () => {
+        if (p.call.mock.calls.length) throw revoked;
+      }),
+    ).rejects.toBe(revoked);
+    expect(p.state.postCount).toBe(0);
+    expect(await readOwnerRefund(db, scope, item.orderId)).toMatchObject({
+      canStartPartial: false,
+      state: "review_required",
+    });
+  });
+  it("partial never authorizes restock/release; cumulative full authorizes explicit whole-order stock actions once", async () => {
+    for (const handed of [false, true]) {
+      const item = await paid();
+      if (handed) {
+        await apply(await request(item.orderId));
+        await apply(await request(item.orderId, "ship"));
+      }
+      const p = await serialProvider(item.orderId),
+        first = await partialInput(item.orderId, 500),
+        before = await balance(item.variantId);
+      await start(first, p.call);
+      expect(
+        (
+          await db
+            .prepare(
+              "SELECT * FROM commerce_owner_refund_full WHERE order_id=?",
+            )
+            .bind(item.orderId)
+            .all()
+        ).results,
+      ).toEqual([]);
+      expect(
+        await readOwnerAllocationRelease(db, scope, item.orderId),
+      ).toMatchObject({ canRelease: false });
+      if (handed) {
+        const d = (await readOwnerReturn(db, scope, item.orderId))!;
+        await applyOwnerReturn(
+          db,
+          scope,
+          actor,
+          {
+            requestId: crypto.randomUUID(),
+            orderId: item.orderId,
+            expectedVersion: d.orderVersion,
+            expectedStockHash: d.stockHash,
+            operation: "inspect_sellable",
+            acknowledge: true,
+          },
+          () => now + 60000,
+        );
+        expect(await readOwnerReturn(db, scope, item.orderId)).toMatchObject({
+          canRestock: false,
+        });
+      }
+      const second = await partialInput(item.orderId, p.total - 500, 500);
+      await start(second, p.call);
+      const anchor = (await db
+        .prepare(
+          "SELECT observation_id FROM commerce_owner_refund_full WHERE order_id=?",
+        )
+        .bind(item.orderId)
+        .first<{ observation_id: string }>())!.observation_id;
+      // Duplicate successful GET observations count once and cannot replace final anchor.
+      await db
+        .prepare(
+          `INSERT INTO commerce_owner_refund_observations SELECT ?,request_id,refund_id,status,amount_cents,refunded_cents,recorded_at FROM commerce_owner_refund_observations WHERE observation_id=?`,
+        )
+        .bind(crypto.randomUUID(), anchor)
+        .run();
+      expect(
+        (await db
+          .prepare(
+            "SELECT observation_id FROM commerce_owner_refund_full WHERE order_id=?",
+          )
+          .bind(item.orderId)
+          .first<{ observation_id: string }>())!.observation_id,
+      ).toBe(anchor);
+      if (handed) {
+        const d = (await readOwnerReturn(db, scope, item.orderId))!;
+        expect(d.canRestock).toBe(true);
+        await applyOwnerReturn(
+          db,
+          scope,
+          actor,
+          {
+            requestId: crypto.randomUUID(),
+            orderId: item.orderId,
+            expectedVersion: d.orderVersion,
+            expectedStockHash: d.stockHash,
+            operation: "restock",
+            acknowledge: true,
+          },
+          () => now + 70000,
+        );
+        expect((await balance(item.variantId))!.on_hand).toBe(
+          Number(before!.on_hand) + 1,
+        );
+      } else {
+        const d = (await readOwnerAllocationRelease(db, scope, item.orderId))!;
+        expect(d.canRelease).toBe(true);
+        await applyOwnerAllocationRelease(
+          db,
+          scope,
+          actor,
+          {
+            requestId: crypto.randomUUID(),
+            orderId: item.orderId,
+            expectedVersion: d.orderVersion,
+            expectedStockHash: d.stockHash,
+            acknowledge: true,
+          },
+          () => now + 70000,
+        );
+        expect((await balance(item.variantId))!.allocated).toBe(0);
+        expect((await balance(item.variantId))!.on_hand).toBe(before!.on_hand);
+      }
+      expect(p.state.postCount).toBe(2);
+    }
+  });
+  it("migrates populated 0029 refund, return/release anchors and all ledger rowids without changing prior facts", async () => {
+    await select29();
+    const a = await paid(),
+      b = await paid("shipping", false, true),
+      pending = await paid(),
+      returned = await paid();
+    await apply(await request(returned.orderId));
+    await apply(await request(returned.orderId, "ship"));
+    await seedRefund29(returned.orderId);
+    // Old source allowed any succeeded observation: preserve a later anchor too.
+    await db
+      .prepare(
+        `INSERT INTO commerce_owner_refund_observations SELECT ?,request_id,refund_id,status,amount_cents,refunded_cents,recorded_at+1 FROM commerce_owner_refund_observations WHERE request_id=(SELECT request_id FROM commerce_owner_refund_intents WHERE order_id=?) AND status='succeeded'`,
+      )
+      .bind(crypto.randomUUID(), returned.orderId)
+      .run();
+    const returnAnchor = await seedReturned29(returned.orderId);
+    const first = await seedRefund29(a.orderId),
+      second = await seedRefund29(b.orderId),
+      third = await seedRefund29(pending.orderId, false);
+    // Retained-allocation release directly exercises an existing observation FK.
+    const source = (await db
+      .prepare(
+        "SELECT * FROM commerce_owner_allocation_release_sources WHERE order_id=?",
+      )
+      .bind(a.orderId)
+      .first<Record<string, unknown>>())!;
+    const lines = (
+      await db
+        .prepare(
+          "SELECT l.position,l.variant_id AS variantId,l.quantity,i.on_hand AS onHand,i.facebook_reserved AS facebookReserved,i.checkout_reserved AS checkoutReserved,i.allocated FROM commerce_order_lines l JOIN commerce_inventory i ON i.variant_id=l.variant_id WHERE l.order_id=? ORDER BY l.position",
+        )
+        .bind(a.orderId)
+        .all()
+    ).results;
+    const rid = crypto.randomUUID();
+    await db
+      .prepare(
+        "INSERT INTO commerce_owner_allocation_release_commands VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .bind(
+        rid,
+        `owner-allocation-release-${rid}`,
+        scope.mode,
+        scope.instanceId,
+        "a".repeat(64),
+        "b".repeat(64),
+        a.orderId,
+        source.capture_id,
+        source.observation_id,
+        source.version,
+        "c".repeat(64),
+        JSON.stringify(lines),
+        now + 60000,
+      )
+      .run();
+    const before = await allHistory();
+    const ledger = await Promise.all(
+      ["intents", "dispatches", "observations"].map(
+        async (n) =>
+          (
+            await db
+              .prepare(
+                `SELECT rowid,* FROM commerce_owner_refund_${n} ORDER BY rowid`,
+              )
+              .all()
+          ).results,
+      ),
+    );
+    await upgrade30();
+    const after = await allHistory();
+    for (const [name, history] of Object.entries(before)) {
+      if (name === "commerce_owner_refund_intents")
+        expect(after[name]).toEqual(
+          (history as Array<Record<string, unknown>>).map((r) => ({
+            ...r,
+            refund_cents: r.amount_cents,
+            prior_refunded_cents: 0,
+            input_contract: "legacy-full-v1",
+          })),
+        );
+      else expect(after[name], name).toEqual(history);
+    }
+    for (const [ix, name] of [
+      "intents",
+      "dispatches",
+      "observations",
+    ].entries()) {
+      const actual = (
+        await db
+          .prepare(
+            `SELECT rowid,* FROM commerce_owner_refund_${name} ORDER BY rowid`,
+          )
+          .all()
+      ).results;
+      expect(actual).toEqual(
+        name === "intents"
+          ? ledger[ix].map((r) => ({
+              ...r,
+              refund_cents: r.amount_cents,
+              prior_refunded_cents: 0,
+              input_contract: "legacy-full-v1",
+            }))
+          : ledger[ix],
+      );
+    }
+    expect(
+      (await db.prepare("PRAGMA foreign_key_check").all()).results,
+    ).toEqual([]);
+    for (const i of [first, second, third])
+      expect(await lookupOwnerRefundCommand(db, scope, actor, i)).toMatchObject(
+        { state: "recorded" },
+      );
+    expect(
+      await readOwnerAllocationRelease(db, scope, a.orderId),
+    ).toMatchObject({ released: true, canRelease: false });
+    expect(await readOwnerReturn(db, scope, returned.orderId)).toMatchObject({
+      stockState: "restored",
+      canRestock: false,
+    });
+    expect(
+      await db
+        .prepare(
+          "SELECT observation_id FROM commerce_owner_return_refunds WHERE observation_id=?",
+        )
+        .bind(returnAnchor)
+        .first(),
+    ).toMatchObject({ observation_id: returnAnchor });
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT * FROM commerce_owner_allocation_released_lines WHERE order_id=?",
+          )
+          .bind(a.orderId)
+          .all()
+      ).results,
+    ).toHaveLength(1);
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT name FROM sqlite_schema WHERE name LIKE '%backup_0030%'",
+          )
+          .all()
+      ).results,
+    ).toEqual([]);
+  }, 30000);
+  it("preserves a legacy pending nonzero observation and recovers with its unchanged full-refund UUID and metadata", async () => {
+    await select29();
+    const item = await paid(),
+      i = await seedRefund29(item.orderId, false);
+    await db
+      .prepare(
+        `INSERT INTO commerce_owner_refund_observations SELECT ?,request_id,refund_id,'pending',amount_cents,123,recorded_at+1 FROM commerce_owner_refund_observations WHERE request_id=? ORDER BY rowid DESC LIMIT 1`,
+      )
+      .bind(crypto.randomUUID(), i.requestId)
+      .run();
+    await upgrade30();
+    expect(
+      (await rows("commerce_owner_refund_observations")).at(-1),
+    ).toMatchObject({ status: "pending", refunded_cents: 123 });
+    expect(await readOwnerRefund(db, scope, item.orderId)).toMatchObject({
+      state: "pending",
+      refundedCents: 0,
+      canStartPartial: false,
+      requestId: i.requestId,
+      currentRequestRefundCents: null,
+      currentRequestPriorRefundedCents: null,
+    });
+    const r = (await db
+      .prepare("SELECT * FROM commerce_owner_refund_intents WHERE request_id=?")
+      .bind(i.requestId)
+      .first<Record<string, unknown>>())!;
+    const p = await provider(item.orderId);
+    p.state.paid = true;
+    const metadata = {
+      test_mode: scope.mode,
+      instance_id: scope.instanceId,
+      account_ref: config.expectedAccountId,
+      order_id: item.orderId,
+      attempt_id: r.payment_request_id,
+      create_operation_key: r.create_operation_key,
+      refund_request_id: i.requestId,
+      refund_operation_key: i.requestId,
+      capture_id: r.capture_id,
+    };
+    const fetcher = vi.fn<StripeSandboxFetch>(async (url, init) => {
+      expect(init.method).toBe("GET");
+      const path = new URL(url).pathname;
+      if (path.startsWith("/v1/refunds/"))
+        return Response.json({
+          id: `re_${i.requestId.replaceAll("-", "")}`,
+          object: "refund",
+          charge: r.transaction_ref,
+          payment_intent: r.payment_intent_ref,
+          currency: "cad",
+          amount: r.amount_cents,
+          status: "succeeded",
+          metadata,
+        });
+      const response = await p.call(url, init);
+      if (path.startsWith("/v1/charges/")) {
+        const charge = (await response.json()) as Record<string, unknown>;
+        charge.amount_refunded = r.amount_cents;
+        charge.refunded = true;
+        return Response.json(charge);
+      }
+      return response;
+    });
+    expect(await query(i, fetcher)).toEqual({
+      testOnly: true,
+      requestId: i.requestId,
+      orderId: item.orderId,
+      state: "succeeded",
+      amountCents: r.amount_cents,
+      refundedCents: r.amount_cents,
+    });
+    expect(await readOwnerRefund(db, scope, item.orderId)).toMatchObject({
+      fullyRefunded: true,
+      remainingCents: 0,
+    });
+  }, 30000);
+  it("failed 0030 rebuild rolls back exact populated 0029 schema, history and immutable fences", async () => {
+    await select29();
+    const item = await paid();
+    await seedRefund29(item.orderId);
+    const before = await allHistory(),
+      schema = (
+        await db
+          .prepare(
+            "SELECT type,name,sql FROM sqlite_schema WHERE name LIKE 'commerce_%' ORDER BY name",
+          )
+          .all()
+      ).results;
+    await expect(
+      upgrade30(
+        migration30() +
+          "\nINSERT INTO commerce_owner_refund_intents(request_id) VALUES('broken');",
+      ),
+    ).rejects.toThrow();
+    expect(await allHistory()).toEqual(before);
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT type,name,sql FROM sqlite_schema WHERE name LIKE 'commerce_%' ORDER BY name",
+          )
+          .all()
+      ).results,
+    ).toEqual(schema);
+    expect(
+      (await db.prepare("PRAGMA foreign_key_check").all()).results,
+    ).toEqual([]);
+    await expect(
+      db.prepare("DELETE FROM commerce_owner_refund_intents").run(),
+    ).rejects.toThrow();
+  }, 30000);
 });

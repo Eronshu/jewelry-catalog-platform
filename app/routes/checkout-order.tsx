@@ -133,7 +133,8 @@ export function OwnedOrderView({
       </p>
       <h1>
         {refund
-          ? refund.state === "succeeded"
+          ? refund.state === "succeeded" ||
+            refund.state === "partially_refunded"
             ? "Test refund confirmed"
             : "Test refund needs follow-up"
           : order.state === "cancelled"
@@ -152,9 +153,11 @@ export function OwnedOrderView({
           <h2>
             {refund.state === "succeeded"
               ? "Full refund verified"
-              : refund.state === "pending"
-                ? "Refund pending"
-                : "Refund request recorded — result needs checking"}
+              : refund.state === "partially_refunded"
+                ? "Partial refund verified"
+                : refund.state === "pending"
+                  ? "Refund pending"
+                  : "Refund request recorded — result needs checking"}
           </h2>
           <p>
             Verified refunded amount: {formatCad(refund.refundedCents)} CAD of{" "}
