@@ -188,6 +188,11 @@ export async function loadCommerceWorkspace(
       if (lines.results.length > 20) throw new Error("Invalid line count");
       view = {
         kind: "order",
+        canManageNotifications:
+          Object.getOwnPropertyDescriptor(
+            env,
+            "COMMERCE_OWNER_NOTIFICATIONS_UI",
+          )?.value === "local-test",
         canReleaseAllocation:
           Object.getOwnPropertyDescriptor(
             env,

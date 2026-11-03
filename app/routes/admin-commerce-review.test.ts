@@ -21,6 +21,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { cloudflareContext } from "../cloudflare-context";
 import { adminPrincipalContext } from "../lib/auth/admin-access.server";
 import { handleWorkerRequest } from "../../workers/app";
+import * as NotificationCommandRoute from "./admin-commerce-notification-command";
+import * as NotificationStatusCommandRoute from "./checkout-status-command";
 import * as ReviewRoute from "./admin-commerce-review";
 import * as ScreenRoute from "./admin-commerce-reservations";
 import * as RecoverRoute from "./admin-commerce-recover";
@@ -124,10 +126,22 @@ const ownerReturnPage = {
   path: "admin/commerce/orders/:orderId/return",
   module: OwnerReturnPageRoute,
 };
+const notificationCommands = {
+  id: "routes/admin-commerce-notification-command",
+  path: "admin/commerce/orders/:orderId/notifications/commands",
+  module: NotificationCommandRoute,
+};
+const notificationStatusCommand = {
+  id: "routes/checkout-status-command",
+  path: "checkout/status/read",
+  module: NotificationStatusCommandRoute,
+};
 const handler = createRequestHandler(
   {
     entry: { module: { default: handleDocument } },
     routes: {
+      [notificationCommands.id]: notificationCommands,
+      [notificationStatusCommand.id]: notificationStatusCommand,
       [route.id]: route,
       [screen.id]: screen,
       [recovery.id]: recovery,
@@ -162,6 +176,8 @@ const handler = createRequestHandler(
         },
         ...Object.fromEntries(
           [
+            notificationCommands,
+            notificationStatusCommand,
             workspace,
             workspaceOrders,
             ownerStock,
@@ -1896,5 +1912,96 @@ describe("Worker to Router isolated refunded allocation release boundary", () =>
     expect(response.status).toBe(404);
     expect(await response.text()).toContain("Stock release page unavailable");
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+});
+
+describe("Worker to Router fictional notification boundaries", () => {
+  const instanceId = "11111111-1111-4111-8111-111111111111",
+    orderId = "order-33333333-3333-4333-8333-333333333333";
+  function notificationEnv(db: object) {
+    return {
+      ...env(db, true),
+      COMMERCE_CHECKOUT_INSTANCE_ID: instanceId,
+      COMMERCE_CHECKOUT_ORIGIN: origin,
+      COMMERCE_OWNER_NOTIFICATIONS_UI: "local-test",
+      COMMERCE_OWNER_NOTIFICATIONS_WRITES: "local-test",
+      COMMERCE_ORDER_STATUS_LINKS: "local-test",
+      COMMERCE_NOTIFICATION_LINK_SECRET: "b".repeat(64),
+    } as unknown as Env;
+  }
+  function sendNotification(db: object, assertion?: string) {
+    return handleWorkerRequest(
+      new Request(
+        `${origin}/admin/commerce/orders/${orderId}/notifications/commands`,
+        {
+          method: "POST",
+          headers: {
+            Origin: origin,
+            "Content-Type": "application/x-www-form-urlencoded",
+            ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+          },
+          body: new URLSearchParams({
+            intent: "lookup",
+            operation: "prepare",
+            notificationId: "",
+            requestId: "22222222-2222-4222-8222-222222222222",
+          }),
+        },
+      ),
+      notificationEnv(db),
+      {} as ExecutionContext,
+      handler,
+    );
+  }
+  it("denies missing, service and unapproved identities before notification database access", async () => {
+    const prepare = vi.fn();
+    for (const [assertion, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "unapproved" }), 403],
+      [await jwt({ common_name: "service" }), 401],
+    ] as const)
+      expect((await sendNotification({ prepare }, assertion)).status).toBe(
+        status,
+      );
+    expect(prepare).not.toHaveBeenCalled();
+  });
+  it("authenticated original request lookup is a JSON resource, not an HTML page", async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: () => ({
+        first: async () =>
+          sql.includes("commerce_payment_scope") ? { ok: 1 } : null,
+      }),
+    }));
+    const response = await sendNotification({ prepare }, await jwt());
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    expect(await response.json()).toEqual({ state: "not_recorded" });
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+  it("status POST reaches only capability lookup without Admin or ownership cookies and returns private JSON", async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: () => ({
+        first: async () =>
+          sql.includes("commerce_payment_scope") ? { ok: 1 } : null,
+      }),
+    }));
+    const response = await handleWorkerRequest(
+      new Request(`${origin}/checkout/status/read`, {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ token: "a".repeat(64) }),
+      }),
+      notificationEnv({ prepare }),
+      {} as ExecutionContext,
+      handler,
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    expect(response.headers.has("Set-Cookie")).toBe(false);
+    expect(await response.text()).not.toContain("a".repeat(64));
+    expect(prepare).toHaveBeenCalledTimes(2);
   });
 });

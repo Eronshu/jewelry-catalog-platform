@@ -248,6 +248,14 @@ function OrderDetail({
         </p>
         <Facts order={order} />
         <PaymentNotice order={order} />
+        {view.canManageNotifications && (
+          <Link
+            className="admin-primary-link"
+            to={`${base}/orders/${encodeURIComponent(order.reference)}/notifications`}
+          >
+            Test notifications and private status links
+          </Link>
+        )}
         {view.canManageFulfillment && (
           <Link
             className="admin-primary-link"

@@ -1,3 +1,4 @@
+import { OwnerNotificationsPreview } from "./owner-notifications";
 import { OwnerAllocationReleasePreview } from "./owner-allocation-release";
 import { OwnerReturnPreview } from "./owner-return";
 import { OwnerRefundPreview } from "./owner-refund";
@@ -154,6 +155,10 @@ function PreviewList() {
 }
 
 const router = createBrowserRouter([
+  {
+    path: "/owner-notifications-preview",
+    Component: OwnerNotificationsPreview,
+  },
   { path: "/stripe-checkout-preview", element: <StripeCheckoutPreview /> },
   ...commerceWorkspacePreviewRoutes,
   { path: "/owner-stock-preview", Component: OwnerStockPreview },
