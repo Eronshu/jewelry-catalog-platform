@@ -70,6 +70,7 @@ export type WorkspaceView = (
       canManageFulfillment?: boolean;
       canManageRefund?: boolean;
       canManageReturn?: boolean;
+      canReleaseAllocation?: boolean;
       order: WorkspaceOrder;
       lines: WorkspaceLine[];
     }

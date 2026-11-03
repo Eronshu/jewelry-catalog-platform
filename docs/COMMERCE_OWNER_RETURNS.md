@@ -8,7 +8,7 @@ From an order choose **Return inspection and stock**. Only an original whole-ord
 
 Reload after a confirmed inspection. A separate whole-order restock action is available only for sellable goods and a recorded, verified full refund associated with that same original capture. It restores the original handed-off quantities once, through the existing stock command and `return` movements. Physical stock increases; Facebook reserve, checkout reserve and allocated stock do not change. Original payment, capture, refund and handoff history remain intact. Inspection may precede refund confirmation; it never initiates a refund.
 
-An unhanded refunded order is deliberately ineligible. Its allocation still protects goods already physically present. Applying a physical return would count those goods twice. A separate safe allocation-release feature is still required. The two existing actual Sandbox payment/refund test orders were unhanded and were not used or altered for this feature.
+An unhanded refunded order is deliberately ineligible. Its allocation still protects goods already physically present. Applying a physical return would count those goods twice. A separate protected [allocation-release feature](./COMMERCE_OWNER_ALLOCATION_RELEASE.md) is being validated under Issue #99; it never adds physical goods. The two existing actual Sandbox payment/refund test orders were unhanded and were not used or altered for this feature.
 
 ## Configuration and access
 

@@ -45,6 +45,11 @@ if (refundMode !== undefined && refundMode !== "1")
   throw new Error(
     "COMMERCE_LOCAL_REFUNDS only accepts 1 for fictional Sandbox refunds.",
   );
+const allocationReleaseMode = process.env.COMMERCE_LOCAL_ALLOCATION_RELEASE;
+if (allocationReleaseMode !== undefined && allocationReleaseMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_ALLOCATION_RELEASE only accepts 1 for fictional local stock release.",
+  );
 const returnMode = process.env.COMMERCE_LOCAL_RETURNS;
 if (returnMode !== undefined && returnMode !== "1")
   throw new Error(
@@ -113,6 +118,12 @@ writeFileSync(
         COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
         COMMERCE_CHECKOUT_EXPIRY: "local-test",
         COMMERCE_CHECKOUT_NEW_ORDERS: "local-test",
+        ...(allocationReleaseMode === "1"
+          ? {
+              COMMERCE_OWNER_ALLOCATION_RELEASE_UI: "local-test",
+              COMMERCE_OWNER_ALLOCATION_RELEASE_WRITES: "local-test",
+            }
+          : {}),
         ...(returnMode === "1"
           ? {
               COMMERCE_OWNER_RETURN_UI: "local-test",
@@ -219,6 +230,7 @@ if (
   preparePayment ||
   stockOperations ||
   returnMode === "1" ||
+  allocationReleaseMode === "1" ||
   refundMode === "1" ||
   fulfillmentMode === "1"
 )

@@ -1,6 +1,6 @@
 # Commerce local development boundary
 
-Status checked 2026-11-02: main `e4e34a5` includes both hosted Sandbox payment paths and full-refund paths, each with an actual fictional CAD44 happy-path acceptance. Owner stock operations and whole-order packing/handoff are merged. Issue #97 adds separate inspected returns/restock, pending its PR gates. Default-off loopback use, actual authentication, payment faults/webhooks, real business content, Safari/UAT and launch approval remain separate gates.
+Status checked 2026-11-03: main `95c41aa` includes both hosted Sandbox payment/full-refund paths, owner stock operations, whole-order packing/handoff and separate inspected returns/restock. Each provider has one actual fictional CAD44 payment/refund happy path; PR98 and main CI135 are complete. Issue #99 implements separate allocation release for fully refunded unhanded orders; local checks and independent review passed, with PR gates still pending. Default-off loopback use, actual authentication, payment faults/webhooks, real business content, Safari/UAT and launch approval remain separate gates.
 
 ## Availability policy
 
@@ -177,3 +177,7 @@ Issue95 extends `COMMERCE_LOCAL_REFUNDS=1` to the original PayPal capture with t
 ## Inspected test returns / Issue #97
 
 `COMMERCE_LOCAL_RETURNS=1 npm run commerce:local` enables the isolated, default-off Admin return UI and writes without provider credentials or an authentication bypass. Use **Return inspection and stock** only for a canonical original whole-order handoff. Inspection changes no inventory; sellable inspection plus a verified full refund permits a separate, once-only physical restock. Unhanded refunded orders remain ineligible and allocated, avoiding double-counted goods. See [original-request recovery, safe pauses and boundaries](./COMMERCE_OWNER_RETURNS.md). The paused `/owner-return-preview` scenes are presentation-only.
+
+## Refunded unhanded order stock release / Issue #99
+
+`COMMERCE_LOCAL_ALLOCATION_RELEASE=1 npm run commerce:local` prepares a new isolated fictional database and default-off Admin release flags without provider credentials or an authentication bypass. **Release refunded order stock** is a separate whole-order allocated-stock action; it does not receive goods or increase physical stock. Original-request lookup remains available while writes are paused. See [release conditions and recovery](./COMMERCE_OWNER_ALLOCATION_RELEASE.md). This feature has not yet completed its PR acceptance gates.

@@ -1,6 +1,6 @@
 # 从当前本地商城基础到正式开售：剩余工作路线图
 
-核对日期：2026-11-02。基线main `e4e34a5`（#96准确head CI132、独立实际审查及main CI133通过）。两家各一条真实Sandbox收款及全额退款链路、合格收货/FB最小操作、后台打包与三种整单交付已完成相应验收子集。当前 [Issue #97](https://github.com/Eronshu/jewelry-catalog-platform/issues/97) 实现已交付订单的实物退回验收与独立回库；验收不改库存，可售验收且同原收款全额退款已确认后才可回库一次，仍待PR/CI收口。未交付退款单的安全allocation释放、部分退款、通知、对账/恢复和上线收口继续分项。付款或退款成功不等于完整营业验收。
+核对日期：2026-11-03。基线main `95c41aa`（#98准确head CI134、独立实际审查及main CI135通过）。两家各一条真实Sandbox收款与全额退款、库存经营、后台打包/整单交付及已交付订单退货验收/独立回库已完成相应验收子集。当前 [Issue #99](https://github.com/Eronshu/jewelry-catalog-platform/issues/99) 开发未交付全额退款单的安全库存占用释放：只减allocated，不加physical，不改原付款/退款/交付事实；本地实现/必要检查和独立审查通过，待准确head PR/CI收口。随后部分退款、通知、对账/恢复和上线收口继续分项。付款或退款成功不等于完整营业验收。
 
 本路线图是**当前剩余工作的执行顺序入口**；[实施方案](./ONLINE_SALES_IMPLEMENTATION_PLAN.md) 的 C01–C20 保留完整范围，[准备度审查](./COMMERCE_READINESS_REVIEW.md) 的 T01–T22 保留验收定义，[需求](./ONLINE_SALES_REQUIREMENTS.md) 保留经营决定。下文 Lxx 是待拆分的工作编号，不冒充已创建的 GitHub Issue 或完成状态。
 
@@ -151,3 +151,7 @@ L10–L12可先用虚构SKU完成；真实商品、材质/照片授权、包装/
 ## Issue #97 当前退货子集
 
 [退货验收与独立回库说明](./COMMERCE_OWNER_RETURNS.md)：默认关闭本机虚构整单操作，保持原付款/退款/交付历史。只处理原已handoff实物退回，不能对未交付已退款单增加physical；后者仍需单独安全释放allocated。上述确认和可售分类是开发测试假设，未代替真实退换政策。
+
+## Issue #99 当前占用释放子集
+
+[未交付退款单库存释放](./COMMERCE_OWNER_ALLOCATION_RELEASE.md) 本地实现与必要检查/独立审查已过，待PR/CI收口；只对原整单同capture全额退款且没有handoff的货品，经营者确认仍在店内可售后单独释放allocated。不能套return加physical，不能凭refundintent放松其他订单floor。保留原付款和退款历史，默认关闭本机虚构测试，不等于经营政策。
