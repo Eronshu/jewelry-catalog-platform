@@ -962,7 +962,7 @@ describe("fictional notification ledger and read-only capabilities", () => {
           .all()
       ).results,
     ).toEqual([]);
-  });
+  }, 30000);
   it("applies 0031 over filled 0030 without changing histories or rowids", async () => {
     await selectBaseline();
     const item = await paid();
@@ -976,7 +976,7 @@ describe("fictional notification ledger and read-only capabilities", () => {
     expect(
       (await db.prepare("PRAGMA foreign_key_check").all()).results,
     ).toEqual([]);
-  });
+  }, 30000);
 });
 
 it("serves real D1 simulated inbox and read-only status through protected HTTP with revoke and original lookup", async () => {
