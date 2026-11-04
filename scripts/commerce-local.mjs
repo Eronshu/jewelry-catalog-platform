@@ -60,6 +60,11 @@ if (fulfillmentMode !== undefined && fulfillmentMode !== "1")
   throw new Error(
     "COMMERCE_LOCAL_FULFILLMENT only accepts 1 for fictional local fulfillment.",
   );
+const attentionMode = process.env.COMMERCE_LOCAL_ATTENTION;
+if (attentionMode !== undefined && attentionMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_ATTENTION only accepts 1 for read-only fictional operating review.",
+  );
 const notificationMode = process.env.COMMERCE_LOCAL_NOTIFICATIONS;
 if (notificationMode !== undefined && notificationMode !== "1")
   throw new Error(
@@ -130,6 +135,9 @@ writeFileSync(
       },
       vars: {
         COMMERCE_MODE: "local-test",
+        ...(attentionMode === "1"
+          ? { COMMERCE_OWNER_ATTENTION_UI: "local-test" }
+          : {}),
         ...(notificationKey
           ? {
               COMMERCE_OWNER_NOTIFICATIONS_UI: "local-test",
@@ -254,6 +262,7 @@ if (
   stockOperations ||
   returnMode === "1" ||
   allocationReleaseMode === "1" ||
+  attentionMode === "1" ||
   refundMode === "1" ||
   fulfillmentMode === "1"
 )

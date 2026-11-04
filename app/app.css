@@ -2953,3 +2953,24 @@ a {
   outline: 3px solid currentColor;
   outline-offset: 3px;
 }
+
+.owner-attention {
+  overflow-wrap: anywhere;
+}
+.owner-attention-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+.owner-attention a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  max-width: 100%;
+}
+.owner-attention-reasons {
+  padding-left: 1.25rem;
+}
+.owner-attention-reasons li {
+  margin-block: 0.75rem;
+}

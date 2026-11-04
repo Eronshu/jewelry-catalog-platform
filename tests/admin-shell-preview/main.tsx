@@ -1,3 +1,4 @@
+import { OwnerAttentionPreview } from "./owner-attention";
 import { OwnerNotificationsPreview } from "./owner-notifications";
 import { OwnerAllocationReleasePreview } from "./owner-allocation-release";
 import { OwnerReturnPreview } from "./owner-return";
@@ -155,6 +156,7 @@ function PreviewList() {
 }
 
 const router = createBrowserRouter([
+  { path: "/owner-attention-preview", Component: OwnerAttentionPreview },
   {
     path: "/owner-notifications-preview",
     Component: OwnerNotificationsPreview,

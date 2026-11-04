@@ -328,7 +328,16 @@ export async function loadCommerceWorkspace(
             : null,
       };
     }
-    return data(view, { headers: workspaceHeaders });
+    return data(
+      {
+        ...view,
+        ...(Object.getOwnPropertyDescriptor(env, "COMMERCE_OWNER_ATTENTION_UI")
+          ?.value === "local-test"
+          ? { canViewAttention: true }
+          : {}),
+      },
+      { headers: workspaceHeaders },
+    );
   } catch (error) {
     if (error instanceof Response) throw error;
     return reject(
