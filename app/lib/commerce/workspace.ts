@@ -68,6 +68,7 @@ export type WorkspaceView = (
   | {
       kind: "order";
       canManageFulfillment?: boolean;
+      canManageNotifications?: boolean;
       canManageRefund?: boolean;
       canManageReturn?: boolean;
       canReleaseAllocation?: boolean;

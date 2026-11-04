@@ -2936,3 +2936,20 @@ a {
   width: 100%;
   min-width: 0;
 }
+
+.order-notifications {
+  max-width: 760px;
+  overflow-wrap: anywhere;
+}
+.order-notifications button {
+  max-width: 100%;
+  margin: 0.3rem 0.5rem 0.3rem 0;
+}
+.order-notifications button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.order-notifications button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}

@@ -5,6 +5,8 @@ export default [
   route("shop", "routes/shop.tsx"),
   route("cart", "routes/cart.tsx"),
   route("checkout", "routes/checkout.tsx"),
+  route("checkout/status", "routes/checkout-status.tsx"),
+  route("checkout/status/read", "routes/checkout-status-command.ts"),
   route("checkout/quote", "routes/checkout-quote.ts"),
   route("checkout/commands", "routes/checkout-commands.ts"),
   route("checkout/orders/:orderId/cancel", "routes/checkout-order-cancel.ts"),
@@ -25,6 +27,14 @@ export default [
   route("admin/commerce", "routes/admin-commerce.tsx"),
   route("admin/commerce/orders", "routes/admin-commerce-orders.tsx"),
   route("admin/commerce/orders/:orderId", "routes/admin-commerce-order.tsx"),
+  route(
+    "admin/commerce/orders/:orderId/notifications",
+    "routes/admin-commerce-notifications.tsx",
+  ),
+  route(
+    "admin/commerce/orders/:orderId/notifications/commands",
+    "routes/admin-commerce-notification-command.ts",
+  ),
   route(
     "admin/commerce/orders/:orderId/fulfillment/commands",
     "routes/admin-commerce-fulfillment-command.ts",

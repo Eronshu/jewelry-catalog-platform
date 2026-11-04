@@ -60,9 +60,25 @@ if (fulfillmentMode !== undefined && fulfillmentMode !== "1")
   throw new Error(
     "COMMERCE_LOCAL_FULFILLMENT only accepts 1 for fictional local fulfillment.",
   );
+const notificationMode = process.env.COMMERCE_LOCAL_NOTIFICATIONS;
+if (notificationMode !== undefined && notificationMode !== "1")
+  throw new Error(
+    "COMMERCE_LOCAL_NOTIFICATIONS only accepts 1 for fictional simulated delivery.",
+  );
+const notificationKey =
+  notificationMode === "1" ? randomBytes(32).toString("hex") : null;
+if (notificationKey)
+  writeFileSync(
+    join(directory, "notification-link-key.json"),
+    JSON.stringify({ linkSecret: notificationKey }),
+    { mode: 0o600 },
+  );
 const preparePayment =
   preparationMode === "1" || stripe !== null || paypal !== null;
 const privateSettings = {
+  ...(notificationKey
+    ? { COMMERCE_NOTIFICATION_LINK_SECRET: notificationKey }
+    : {}),
   ...places,
   ...stripe,
   ...paypal,
@@ -77,7 +93,7 @@ if (Object.keys(privateSettings).length)
     { mode: 0o600 },
   );
 function removeGeneratedPaymentSettings() {
-  if (!stripe && !paypal) return;
+  if (!stripe && !paypal && !notificationKey) return;
   try {
     unlinkSync(join(directory, ".dev.vars"));
   } catch {
@@ -114,6 +130,13 @@ writeFileSync(
       },
       vars: {
         COMMERCE_MODE: "local-test",
+        ...(notificationKey
+          ? {
+              COMMERCE_OWNER_NOTIFICATIONS_UI: "local-test",
+              COMMERCE_OWNER_NOTIFICATIONS_WRITES: "local-test",
+              COMMERCE_ORDER_STATUS_LINKS: "local-test",
+            }
+          : {}),
         COMMERCE_CHECKOUT_INSTANCE_ID: checkoutInstance,
         COMMERCE_CHECKOUT_ORIGIN: `http://127.0.0.1:${port}`,
         COMMERCE_CHECKOUT_EXPIRY: "local-test",
