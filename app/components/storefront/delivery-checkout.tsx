@@ -529,7 +529,11 @@ export function DeliveryCheckout({
             )}
           </>
         )}
-        <p>No payment is available in this local preview.</p>
+        <p>
+          {orderFlowAvailable
+            ? "This preview does not start payment. Continue to final confirmation, then use your private test order if a Sandbox payment method is enabled."
+            : "No payment is available in this local preview."}
+        </p>
         {orderFlowAvailable && (
           <section>
             <p>

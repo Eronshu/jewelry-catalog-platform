@@ -49,8 +49,10 @@ export default function Checkout() {
         <p className="commerce-kicker">Local test only</p>
         <h1>Delivery &amp; quote review</h1>
         <p>
-          Use fictional contact details and addresses only. No order,
-          reservation or payment can be placed here.
+          Use fictional contact details and addresses only.{" "}
+          {loaderData?.orderFlowAvailable
+            ? "This page previews delivery charges. Continue to final confirmation to create an unpaid test order; any enabled Sandbox payment starts from that private order."
+            : "No order, reservation or payment can be placed here."}
         </p>
       </header>
       <DeliveryCheckout
