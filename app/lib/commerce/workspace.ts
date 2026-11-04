@@ -83,4 +83,4 @@ export type WorkspaceView = (
       search: string;
       nextCursor: string | null;
     }
-) & { observedAt: number };
+) & { observedAt: number; canViewAttention?: boolean };

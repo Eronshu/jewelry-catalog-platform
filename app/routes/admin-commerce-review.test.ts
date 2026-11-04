@@ -1,3 +1,4 @@
+import * as OwnerAttentionPageRoute from "./admin-commerce-attention";
 import {
   createRequestHandler,
   RouterContextProvider,
@@ -136,12 +137,18 @@ const notificationStatusCommand = {
   path: "checkout/status/read",
   module: NotificationStatusCommandRoute,
 };
+const ownerAttentionPage = {
+  id: "routes/admin-commerce-attention",
+  path: "admin/commerce/attention",
+  module: OwnerAttentionPageRoute,
+};
 const handler = createRequestHandler(
   {
     entry: { module: { default: handleDocument } },
     routes: {
       [notificationCommands.id]: notificationCommands,
       [notificationStatusCommand.id]: notificationStatusCommand,
+      [ownerAttentionPage.id]: ownerAttentionPage,
       [route.id]: route,
       [screen.id]: screen,
       [recovery.id]: recovery,
@@ -178,6 +185,7 @@ const handler = createRequestHandler(
           [
             notificationCommands,
             notificationStatusCommand,
+            ownerAttentionPage,
             workspace,
             workspaceOrders,
             ownerStock,
@@ -2003,5 +2011,132 @@ describe("Worker to Router fictional notification boundaries", () => {
     expect(response.headers.has("Set-Cookie")).toBe(false);
     expect(await response.text()).not.toContain("a".repeat(64));
     expect(prepare).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Worker to Router read-only order attention boundary", () => {
+  const attentionPath = "/admin/commerce/attention";
+  function attentionEnv(db: object, flag = true) {
+    return {
+      ...env(db, true),
+      COMMERCE_CHECKOUT_INSTANCE_ID: "11111111-1111-4111-8111-111111111111",
+      COMMERCE_CHECKOUT_ORIGIN: origin,
+      ...(flag ? { COMMERCE_OWNER_ATTENTION_UI: "local-test" } : {}),
+    } as unknown as Env;
+  }
+  function sendAttention(
+    db: object,
+    assertion?: string,
+    path = attentionPath,
+    method = "GET",
+    flag = true,
+  ) {
+    return handleWorkerRequest(
+      new Request(origin + path, {
+        method,
+        headers: {
+          ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+          Origin: origin,
+        },
+      }),
+      attentionEnv(db, flag),
+      {} as ExecutionContext,
+      handler,
+    );
+  }
+  it("denies missing, service and unapproved identities before attention model/database access", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn();
+    for (const [assertion, status] of [
+      [undefined, 401],
+      [await jwt({ sub: "other" }), 403],
+      [await jwt({ common_name: "service" }), 401],
+    ] as const)
+      expect((await sendAttention({ prepare, batch }, assertion)).status).toBe(
+        status,
+      );
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("keeps default-off, read-only methods and untrusted query fields ahead of database reads", async () => {
+    const prepare = vi.fn(),
+      batch = vi.fn(),
+      token = await jwt();
+    expect(
+      (
+        await sendAttention(
+          { prepare, batch },
+          token,
+          attentionPath,
+          "GET",
+          false,
+        )
+      ).status,
+    ).toBe(404);
+    for (const method of ["POST", "PUT", "DELETE"]) {
+      const r = await sendAttention(
+        { prepare, batch },
+        token,
+        attentionPath,
+        method,
+      );
+      expect(r.status).toBe(405);
+      expect(r.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    for (const suffix of [
+      "?status=guess",
+      "?reference=bad",
+      "?email=guess",
+      "?status=all&status=payment",
+    ]) {
+      expect(
+        (await sendAttention({ prepare, batch }, token, attentionPath + suffix))
+          .status,
+      ).toBe(400);
+    }
+    expect(prepare).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("renders the authenticated private read-only page without granting customer ownership", async () => {
+    const statement = {
+      bind: vi.fn().mockReturnThis(),
+      first: vi.fn().mockResolvedValue({ 1: 1 }),
+      all: vi.fn().mockResolvedValue({
+        success: true,
+        results: [
+          {
+            order_count: 0,
+            payment_count: 0,
+            refund_count: 0,
+            notification_count: 0,
+            order_id: null,
+          },
+        ],
+      }),
+    };
+    const prepare = vi.fn(() => statement),
+      batch = vi.fn();
+    const r = await sendAttention({ prepare, batch }, await jwt());
+    expect(r.status).toBe(200);
+    expect(r.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(r.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(r.headers.has("Set-Cookie")).toBe(false);
+    const html = await r.text();
+    expect(html).toContain("Needs attention");
+    expect(html).toContain("No recorded issues in this view");
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(batch).not.toHaveBeenCalled();
+  });
+  it("renders a static private error for unavailable records without leaking storage details", async () => {
+    const prepare = vi.fn(() => {
+      throw new Error("PRIVATE_STORAGE_DETAIL");
+    });
+    const r = await sendAttention({ prepare }, await jwt());
+    expect(r.status).toBe(503);
+    expect(r.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(r.headers.get("Referrer-Policy")).toBe("no-referrer");
+    const html = await r.text();
+    expect(html).toContain("Attention view unavailable");
+    expect(html).not.toContain("PRIVATE_STORAGE_DETAIL");
   });
 });

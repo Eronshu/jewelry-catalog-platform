@@ -580,6 +580,9 @@ export function CommerceWorkspace({ view }: { view: WorkspaceView }) {
           </NavLink>
           <NavLink to={`${base}/orders`}>Orders</NavLink>
           <NavLink to={`${base}/inventory`}>Inventory</NavLink>
+          {view.canViewAttention && (
+            <NavLink to={`${base}/attention`}>Needs attention</NavLink>
+          )}
         </nav>
         <p className="commerce-workspace-muted">
           Observed <Time value={view.observedAt} />. Reload to see the latest
